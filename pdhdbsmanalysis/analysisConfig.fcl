@@ -1,0 +1,17 @@
+BEGIN_PROLOG
+
+analyzeEvents:
+{
+    module_type: "AnalyzeEvents"
+
+
+    SliceLabel:       "pandora"
+    VertexLabel:      "pandora"
+    TrackLabel:       "pandoraTrack"
+    ParticleIDLabel:  "pandorapid"
+    ClusterLabel:     "pandora"
+    PFParticleLabel:  "pandora"
+    ShowerLabel:      "pandoraShower"
+}
+
+END_PROLOG
