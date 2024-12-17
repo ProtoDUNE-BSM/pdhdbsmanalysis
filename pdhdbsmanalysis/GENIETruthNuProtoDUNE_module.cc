@@ -25,6 +25,7 @@
 #include "art/Framework/Principal/Handle.h"
 #include "art/Framework/Principal/Run.h"
 #include "art/Framework/Principal/SubRun.h"
+#include "art/Framework/Services/Registry/ServiceHandle.h"
 #include "canvas/Utilities/InputTag.h"
 #include "fhiclcpp/ParameterSet.h"
 #include "messagefacility/MessageLogger/MessageLogger.h"
@@ -81,6 +82,10 @@ private:
   
   TH1D *hMCNeutrinoEnergy;
 
+  std::string fFileName;
+
+  double fSetPOT;
+
   int fSimPDG;     ///< PDG ID of the particle being processed
   int fSimTrackID; ///< GEANT ID of the particle being processed
   int fCCNC; ///< Is neutrino interaction a CC or NC interaction
@@ -100,24 +105,26 @@ private:
   std::vector<double> fFiducialBoundaries;
   double fZedge;
 
-  double fSetPOT;
   double fBR;
   double fPOT;
   double fGoodPOT;
+  double fTotalPOT;
 
+  std::string fFilename;
 };
 
 
 // Analyser class constructor
 ana::GENIETruthNuProtoDUNE::GENIETruthNuProtoDUNE(fhicl::ParameterSet const& p)
-  : EDAnalyzer{p} 
+  : EDAnalyzer{p}
   , fMCTruthLabel(p.get<std::string>("MCTruthLabel"))
   , fSetPOT(p.get<double>("SetPOT"))
   , fBR(p.get<double>("BR"))
-
+  , fFilename(p.get<std::string>("filename"))
   // More initializers here.
 {
-  
+ 
+  std::cout << "FILENAME = " << fFilename << std::endl;
   // Get a pointer to the geometry service provider.
   fGeometryService = lar::providerFrom<geo::Geometry>();
   // TPC 1 is the first proper TPC - TPC 0 is for track stubs
@@ -133,6 +140,7 @@ ana::GENIETruthNuProtoDUNE::GENIETruthNuProtoDUNE(fhicl::ParameterSet const& p)
     std::cout << "\n bound = " << fFiducialBoundaries.at(i);
   }
 
+  fTotalPOT = 0;
   fZedge = tpc.Length()*2.;
 
   // Call appropriate consumes<>() for any products to be retrieved by this module.
@@ -198,8 +206,7 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
       fSimulationNtuple->Fill();
     }
   }
-  hMCNeutrinoEnergy->Fill(fE, fBR * fSetPOT/fPOT);
-  
+  hMCNeutrinoEnergy->Fill(fE);
 }
 
 // Define outputs at start of the job
@@ -234,25 +241,28 @@ void ana::GENIETruthNuProtoDUNE::beginJob() {
   fSubrunTree = tfs->make<TTree>("SubRunTree", "SubRun-level information");
   fSubrunTree->Branch("POT", &fPOT, "POT/D");
   fSubrunTree->Branch("GoodPOT", &fGoodPOT, "GoodPOT/D");
-
 }
 
 void ana::GENIETruthNuProtoDUNE::beginSubRun(art::SubRun const& subRun) {
-    const auto potSummaryHandle = subRun.getValidHandle<sumdata::POTSummary>("generator");
-    const auto &potSummary = *potSummaryHandle;
-    fPOT = potSummary.totpot;
-    fGoodPOT = potSummary.totgoodpot;
-     
-    std::cout << "POTSummary content: totpot = " << potSummary.totpot 
-      << ", totgoodpot = " << potSummary.totgoodpot << std::endl;
+  
+  const auto potSummaryHandle = subRun.getValidHandle<sumdata::POTSummary>("generator");
+  const auto &potSummary = *potSummaryHandle;
+  fPOT = potSummary.totpot;
+  fGoodPOT = potSummary.totgoodpot;
+ 
+  fTotalPOT += fPOT;
+  std::cout << "POTSummary content: totpot = " << potSummary.totpot 
+    << ", totgoodpot = " << potSummary.totgoodpot << std::endl;
       
-    // Fill the TTree with the current subrun's POT information
-    fSubrunTree->Fill();
+  // Fill the TTree with the current subrun's POT information
+  fSubrunTree->Fill();
 }
 
 void ana::GENIETruthNuProtoDUNE::endJob()
 {
   // Implementation of optional member function here.
+  std::cout << "Total POT = " << fTotalPOT << std::endl;
+  hMCNeutrinoEnergy->Scale(fSetPOT / fTotalPOT);
 }
 
 DEFINE_ART_MODULE(ana::GENIETruthNuProtoDUNE)

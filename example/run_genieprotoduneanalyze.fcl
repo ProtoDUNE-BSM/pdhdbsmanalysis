@@ -1,0 +1,39 @@
+#include "GENIETruthNuProtoDUNE.fcl"
+#include "services_dune.fcl"
+
+process_name: GENIETruthNuProtoDUNE
+
+source:
+{
+  module_type: RootInput
+  maxEvents: -1
+  #fileNames: ["reco_protodunehd.root"]
+}
+
+services:
+{
+  TFileService: { fileName: "genie_protodune_output.root" }
+  @table::protodunehd_simulation_services
+}
+
+physics:
+{
+  analyzers:
+  {
+    ana: @local::analyzegenieprotodunedm
+  }
+  path1: [ ana ]
+  end_paths: [ path1 ]
+}
+
+physics.analyzers.ana.SimulationLabel: "largeant"
+physics.analyzers.ana.MCTruthLabel: "generator"
+physics.analyzers.ana.SetPOT: 1.5e17
+physics.analyzers.ana.filename: "input.root"
+physics.analyzers.ana.BR: @local::numu.decay4
+#physics.analyzers.ana.BR: @local::numu.decay4
+#physics.analyzers.ana.BR: @local::numu.decay4
+#physics.analyzers.ana.BR: @local::numu.decay4
+#physics.analyzers.ana.BR: @local::numu.decay4
+#physics.analyzers.ana.BR: @local::numu.decay4
+

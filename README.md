@@ -37,7 +37,7 @@ mrb newDev -v ${VERSION} -q ${QUALS}
 source ${WORKDIR}/${DIRECTORY}/localProducts*/setup
 
 # Clone LArSoftDataTools from ProtoDUNE-BSM GitHub
-mrb g https://github.com/ProtoDUNE-BSM/LArSoftAnalysisTools.git
+mrb g https://github.com/ProtoDUNE-BSM/pdhdbsmanalysis.git
 
 cd ${MRB_BUILDDIR}
 
