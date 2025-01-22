@@ -12,6 +12,12 @@ analyzeEvents:
     ClusterLabel:     "pandora"
     PFParticleLabel:  "pandora"
     ShowerLabel:      "pandoraShower"
+    MCParticleLabel:  "largeant"
+    HitsModuleLabel:  "gaushit"
+    MCTruthLabel:     "generator"
+    CalorimetryLabel: "pandoracalo"
+    OutputFolder:     "/exp/dune/app/users/dpullia/out_folder/NeutrinoSim_v2_wnp04_numu_decay4_reco"
+    OutputFileName:   "testOut"
 }
 
 END_PROLOG
