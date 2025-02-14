@@ -15,6 +15,14 @@
 #include "art/Framework/Principal/SubRun.h"
 #include "canvas/Utilities/InputTag.h"
 #include "fhiclcpp/ParameterSet.h"
+#include "larcoreobj/SummaryData/POTSummary.h"
+
+#include "detdataformats/trigger/TriggerObjectOverlay.hpp"
+#include "detdataformats/trigger/TriggerPrimitive.hpp"
+#include "detdataformats/trigger/TriggerActivityData.hpp"
+#include "detdataformats/trigger/TriggerCandidateData.hpp"
+
+
 // #include "messagefacility/MessageLogger/MessageLogger.h"
 // #include "art/Framework/Services/Registry/ServiceHandle.h"
 
@@ -68,9 +76,13 @@ public:
   AnalyzeEvents& operator=(AnalyzeEvents&&) = delete;
 
   std::vector<double> GetDaugtherInfoDFS(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e);
+  std::vector<TruthMatchUtils::G4ID> GetTrueInfoChainDFS(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e);
+  TruthMatchUtils::G4ID GetTrueInfo(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e);
 
   // Required functions.
   void analyze(art::Event const& e) override;
+  void beginSubRun(art::SubRun const& subRun) override;
+
 
   // Selected optional functions.
   void beginJob() override;
@@ -88,8 +100,11 @@ private:
   std::string fMCParticleLabel;
   std::string fMCTruthLabel;
   std::string fCalorimetryLabel;
+  std::string fTALabel;
   std::string fOutputFolder;
   std::string fOutputFileName;
+  bool fGetTruth;
+
 
   // PDG vector
   std::vector<int> pdg_vector;
@@ -98,7 +113,11 @@ private:
   // 
   const bool fRollUpUnsavedIDs = true;
 
-  //
+  // PoT variables
+  double fPOT = 0;
+  double fTotalPOT = 0;
+  double fGoodPOT = 0;
+
 
 
 };
@@ -115,8 +134,10 @@ test::AnalyzeEvents::AnalyzeEvents(fhicl::ParameterSet const& p)
   fMCParticleLabel(p.get<std::string>("MCParticleLabel")),
   fMCTruthLabel(p.get<std::string>("MCTruthLabel")),
   fCalorimetryLabel(p.get<std::string>("CalorimetryLabel")),
+  fTALabel(p.get<std::string>("TALabel")),
   fOutputFolder(p.get<std::string>("OutputFolder")),
-  fOutputFileName(p.get<std::string>("OutputFileName"))
+  fOutputFileName(p.get<std::string>("OutputFileName")),
+  fGetTruth(p.get<bool>("GetTruth"))
 {
   // Call appropriate consumes<>() for any products to be retrieved by this module.
 }
@@ -125,70 +146,161 @@ void test::AnalyzeEvents::analyze(art::Event const& e)
 {
   // Implementation of required member function here.
   // Set the event ID
-  unsigned int EventID = e.id().event();
-  std::cout << "Event ID: " << EventID << std::endl;
+  // unsigned int EventID = e.id().event();
+  // std::cout << "Event ID: " << EventID << std::endl;
   // auto const clockData = art::ServiceHandle<detinfo::DetectorClocksService>()->DataFor(e);
 
-  int fSimPDG = 0;
-  int fCCNC = 0;
+  // int fSimPDG = 0;
+  // int fCCNC = 0;
   double fE = 0;
+  std::ofstream outfile_truth;
+  outfile_truth.open(fOutputFolder + "/" + fOutputFileName+"_truth.txt", std::ios_base::app);
 
-  auto truthHandle = e.getValidHandle<std::vector<simb::MCTruth>>(fMCTruthLabel);
-  for (auto const& truth : (*truthHandle)) {
-    if (truth.NeutrinoSet()) {
-      const auto &nu = truth.GetNeutrino();
-      const auto &neutrino = nu.Nu();
+  std::ofstream outfile_recos;
+  outfile_recos.open(fOutputFolder + "/" + fOutputFileName+"_pfparticle.txt", std::ios_base::app);
+  outfile_recos<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<std::endl;
 
-      fSimPDG = neutrino.PdgCode();
-      fCCNC = nu.CCNC();
-      fE = neutrino.E();
-      
-      std::cout << "Neutrino truth: " << std::endl;
-      std::cout << "PDG: " << fSimPDG << " CCNC: " << fCCNC << " E: " << fE << " Vertex (XYZ): " << neutrino.Vx() << " " << neutrino.Vy() << " " << neutrino.Vz() << " Mother: " << neutrino.Mother() << " Process: " << neutrino.Process() << std::endl;
+  int fTA = 0;
 
-      // print to file
-      std::cout<<"Output file: "<<fOutputFolder + "/" + fOutputFileName+"_truth.txt"<<std::endl;
-      std::ofstream outfile;
-      outfile.open(fOutputFolder + "/" + fOutputFileName+"_truth.txt", std::ios_base::app);
-      outfile << neutrino.Vx() << " " << neutrino.Vy() << " " << neutrino.Vz() << " " << fE << " " << neutrino.Px() << " " << neutrino.Py() << " " << neutrino.Pz() << " " << neutrino.PdgCode() << " " << neutrino.Mother() << std::endl;
-      outfile.close();
+  art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
+  if (!taHandle.isValid()) {
+    fTA = -1;
+  } 
+    
+
+ if (!e.getByLabel(fTALabel, taHandle)) {
+    fTA = 0;
+  } else {
+    if (taHandle->size() == 0) {
+      fTA = 0;
+    } else {
+      fTA = 1;
+    }
+  } 
+
+  if (fGetTruth) {
+    auto truthHandle = e.getValidHandle<std::vector<simb::MCTruth>>(fMCTruthLabel);
+    for (auto const& truth : (*truthHandle)) {
+      if (truth.NeutrinoSet()) {
+        const auto &nu = truth.GetNeutrino();
+        const auto &neutrino = nu.Nu();
+
+        // fSimPDG = neutrino.PdgCode();
+        // fCCNC = nu.CCNC();
+        fE = neutrino.E();
+        
+        // std::cout << "Neutrino truth Origin " << truth.Origin() << std::endl;
+        // std::cout << "PDG: " << fSimPDG << " CCNC: " << fCCNC << " E: " << fE << " Vertex (XYZ): " << neutrino.Vx() << " " << neutrino.Vy() << " " << neutrino.Vz() << " Mother: " << neutrino.Mother() << " Process: " << neutrino.Process() << std::endl;
+
+        // print to file
+        // std::cout<<"Output file: "<<fOutputFolder + "/" + fOutputFileName+"_truth.txt"<<std::endl;
+        outfile_truth << neutrino.Vx() << " " << neutrino.Vy() << " " << neutrino.Vz() << " " << fE << " " << neutrino.Px() << " " << neutrino.Py() << " " << neutrino.Pz() << " " << neutrino.PdgCode() << " " << neutrino.Mother() << " " << fPOT << " " << fGoodPOT << " " << fTotalPOT << " " << fTA << std::endl;
+      }
     }
   }
+
 
   // get the vector of pointers to pfparticles
   art::Handle<std::vector<recob::PFParticle>> pfparticleHandle = e.getHandle<std::vector<recob::PFParticle>>(fPFParticleLabel);
   if (pfparticleHandle.isValid()){
     std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector;
     art::fill_ptr_vector(pfparticlePtrVector, pfparticleHandle);
-    std::cout << "Number of PFParticles: " << pfparticlePtrVector.size() << std::endl;
+    // std::cout << "Number of PFParticles: " << pfparticlePtrVector.size() << std::endl;
 
-    std::ofstream outfile;
-    std::cout<<"Output file: "<<fOutputFolder + "/" + fOutputFileName+"_pfparticle.txt"<<std::endl;
-    outfile.open(fOutputFolder + "/" + fOutputFileName+"_pfparticle.txt", std::ios_base::app);
 
     for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
       if (pfparticlePtr->IsPrimary() and (pfparticlePtr->PdgCode() == 12 or pfparticlePtr->PdgCode() == 14 or pfparticlePtr->PdgCode() == 16 or pfparticlePtr->PdgCode() == -12 or pfparticlePtr->PdgCode() == -14 or pfparticlePtr->PdgCode() == -16)) {
-        std::cout << "Neutrino found" << std::endl;
-        std::cout << "PDG: " << pfparticlePtr->PdgCode() << " Parent: " << pfparticlePtr->Parent() << " Self: " << pfparticlePtr->Self() << std::endl;
+        // std::cout << "Neutrino found" << std::endl;
+        // std::cout << "PDG: " << pfparticlePtr->PdgCode() << " Parent: " << pfparticlePtr->Parent() << " Self: " << pfparticlePtr->Self() << std::endl;
         // get the vertex
         art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
         std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
-        std::cout << "Vertex position: (" << vertices.at(0)->position().X() << ", " << vertices.at(0)->position().Y() << ", " << vertices.at(0)->position().Z() << ")" << std::endl;
+        // std::cout << "Vertex position: (" << vertices.at(0)->position().X() << ", " << vertices.at(0)->position().Y() << ", " << vertices.at(0)->position().Z() << ")" << std::endl;
 
         // get the track
         std::vector<double> info = GetDaugtherInfoDFS(pfparticlePtr, e);
-        std::cout << "Hits: " << info[0] << " PFParticles: " << info[1] << " Energy: " << info[2] << std::endl;
-        outfile << vertices.at(0)->position().X() << " " << vertices.at(0)->position().Y() << " " << vertices.at(0)->position().Z() <<  " " << pfparticlePtr->PdgCode() << " " << info[0] << " " << info[1] << " " << info[2] << " " << info[3] << " " << info[4] << " " << info[5] << std::endl;
+        
+
+        int trueOriginID = -999;
+        if (fGetTruth){
+          trueOriginID = GetTrueInfo(pfparticlePtr, e);
+        }
+        outfile_recos << vertices.at(0)->position().X() << " " << vertices.at(0)->position().Y() << " " << vertices.at(0)->position().Z() <<  " " << pfparticlePtr->PdgCode() << " " << info[0] << " " << info[1] << " " << info[2] << " " << info[3] << " " << info[4] << " " << info[5] << " " << trueOriginID << std::endl;
       }
     }
-    outfile<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<std::endl;
-    outfile.close();
+
   }
   else {
-    std::cout << "PFParticle handle is not valid" << std::endl;
+    // std::cout << "PFParticle handle is not valid" << std::endl;
   }
+  outfile_truth.close();
+  outfile_recos.close();
+}
+
+// parameters for the subrun functions
 
 
+
+void test::AnalyzeEvents::beginSubRun(art::SubRun const& subRun) {
+  
+  const auto potSummaryHandle = subRun.getValidHandle<sumdata::POTSummary>("generator");
+  const auto &potSummary = *potSummaryHandle;
+  fPOT = potSummary.totpot;
+  fGoodPOT = potSummary.totgoodpot;
+  fTotalPOT += fPOT;
+
+}
+
+int test::AnalyzeEvents::GetTrueInfo(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e) {
+  TruthMatchUtils::G4ID trueID = 0;
+  std::vector<TruthMatchUtils::G4ID> trueOriginIDs_vector;
+  // get the daughter pfparticles
+  trueOriginIDs_vector = GetTrueInfoChainDFS(pfparticlePtr, e);
+
+  for (TruthMatchUtils::G4ID trueOriginID : trueOriginIDs_vector) {
+    if (trueOriginID == 1) {
+      trueID++;
+    }
+  }
+  
+
+  return trueID;
+}
+
+std::vector<TruthMatchUtils::G4ID> test::AnalyzeEvents::GetTrueInfoChainDFS(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e) {
+  std::vector<TruthMatchUtils::G4ID> trueIDs_vector;
+  // get the daughter pfparticles
+  std::vector<art::Ptr<recob::PFParticle>> daughters = dune_ana::DUNEAnaPFParticleUtils::GetChildParticles(pfparticlePtr, e, fPFParticleLabel);
+
+  if (daughters.size() == 0) {
+    // get the hits
+    art::Handle<std::vector<recob::PFParticle>> pfparticleHandle = e.getHandle<std::vector<recob::PFParticle>>(fPFParticleLabel);
+    std::vector<art::Ptr<recob::Hit>> hits = dune_ana::DUNEAnaPFParticleUtils::GetHits(pfparticlePtr, e, fPFParticleLabel);
+    // get the true info
+    const auto clockData = art::ServiceHandle<detinfo::DetectorClocksService>()->DataFor(e);
+    TruthMatchUtils::G4ID hitID(TruthMatchUtils::TrueParticleIDFromTotalRecoHits(clockData, hits, fRollUpUnsavedIDs));
+
+
+    art::ServiceHandle<cheat::ParticleInventoryService> pi_serv;
+    const simb::MCParticle* mcparticle = pi_serv->TrackIdToParticle_P(hitID);
+    // check if the pointer is valid
+    if (mcparticle == nullptr) {
+      trueIDs_vector.push_back(0);
+      
+    } else{
+      int trackID = mcparticle->TrackId();
+      simb::MCTruth mcTruth = pi_serv->TrackIdToMCTruth(trackID);
+      trueIDs_vector.push_back(mcTruth.Origin());  
+    }
+
+  }
+  else {
+    for (const art::Ptr<recob::PFParticle>& daughter : daughters) {
+      std::vector<TruthMatchUtils::G4ID> daughter_trueIDs = GetTrueInfoChainDFS(daughter, e);
+      trueIDs_vector.insert(trueIDs_vector.end(), daughter_trueIDs.begin(), daughter_trueIDs.end());
+    }
+  }
+  return trueIDs_vector;
 }
 
 std::vector<double> test::AnalyzeEvents::GetDaugtherInfoDFS(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e) {
