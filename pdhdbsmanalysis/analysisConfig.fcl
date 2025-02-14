@@ -16,8 +16,11 @@ analyzeEvents:
     HitsModuleLabel:  "gaushit"
     MCTruthLabel:     "generator"
     CalorimetryLabel: "pandoracalo"
-    OutputFolder:     "/exp/dune/app/users/dpullia/out_folder/NeutrinoSim_v2_wnp04_numu_decay4_reco"
+    TALabel:          "tamakerTPC"
+    OutputFolder:     "/exp/dune/app/users/dpullia/out_folder/base/"
     OutputFileName:   "testOut"
+    GetTruth:         true
+
 }
 
 END_PROLOG
