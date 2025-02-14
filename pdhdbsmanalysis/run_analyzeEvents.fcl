@@ -1,5 +1,7 @@
 #include "analysisConfig.fcl"
 #include "simulationservices_dune.fcl"
+#include "services_refactored_pdune.fcl"
+#include "protodune_tools_dune.fcl"
 
 process_name: AnalyzeEvents  # The process name must NOT contain any underscores
 
@@ -12,6 +14,8 @@ source:
 services:
 {
   TFileService: { fileName: "analysisOutput.root" }
+  TimeTracker:       {}
+  @table::protodunehd_reco_services
 }
 
 physics:
