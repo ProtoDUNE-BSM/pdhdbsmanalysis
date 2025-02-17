@@ -1,7 +1,11 @@
 #include "PandoraNeutrinoAnaProtoDUNE.fcl"
+#include "calorimetry_pdune.fcl"
+#include "neutrinoenergyrecoalg_dune.fcl"
 #include "services_dune.fcl"
 
-process_name: GENIETruthNuProtoDUNE
+process_name: PandoraAnalysis
+
+
 
 source:
 {
@@ -13,6 +17,9 @@ services:
 {
   TFileService: { fileName: "pandora_protodune_output.root" }
   @table::protodunehd_simulation_services
+  #@table::dune_neutrinoenergyrecoalg
+  BackTrackerService: @local::standard_backtrackerservice
+  ParticleInventoryService:       @local::standard_particleinventoryservice
 }
 
 physics:
@@ -25,7 +32,16 @@ physics:
   end_paths: [ path1 ]
 }
 
+physics.filters.vertexfilter.InputTagTP : "tpmakerTPC"
+physics.filters.vertexfilter.InputTagTA : "tamakerTPC"
+
+physics.analyzers.ana.decay: 4
 physics.analyzers.ana.SimulationLabel: "largeant"
 physics.analyzers.ana.MCTruthLabel: "generator"
 physics.analyzers.ana.PFParticleLabel: "pandora"
-physics.analyzers.ana.SetPOT: 1.5e17
+physics.analyzers.ana.SetPOT: 3.56E16
+physics.analyzers.ana.filename: "input.root"
+#physics.analyzers.ana.CalorimetryAlg: @local::pdhd_calodata
+#physics.analyzers.ana.SimulationLabel: "largeant"
+#physics.analyzers.ana.MCTruthLabel: "generator"
+#physics.analyzers.ana.PFParticleLabel: "pandora"

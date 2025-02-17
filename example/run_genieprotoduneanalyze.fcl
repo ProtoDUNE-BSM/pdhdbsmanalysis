@@ -1,6 +1,8 @@
 #include "GENIETruthNuProtoDUNE.fcl"
 #include "services_dune.fcl"
 
+#include "PDHDVertexFilter.fcl"
+
 process_name: GENIETruthNuProtoDUNE
 
 source:
@@ -18,13 +20,26 @@ services:
 
 physics:
 {
+  filters:
+  {
+    vertexfilter: @local::pdhdvertexfilter
+  }
   analyzers:
   {
     ana: @local::analyzegenieprotodunedm
   }
+
+  #produce: [ vertexfilter ]
+
+  #trigger_paths: [ produce ]
+
   path1: [ ana ]
   end_paths: [ path1 ]
 }
+
+physics.analyzers.ana.decay: 2
+physics.filters.vertexfilter.InputTagTP : "tpmakerTPC"
+physics.filters.vertexfilter.InputTagTA : "tamakerTPC"
 
 physics.analyzers.ana.SimulationLabel: "largeant"
 physics.analyzers.ana.MCTruthLabel: "generator"

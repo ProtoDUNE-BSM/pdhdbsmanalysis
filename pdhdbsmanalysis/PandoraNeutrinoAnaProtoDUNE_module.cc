@@ -12,10 +12,14 @@
 #include "larcorealg/Geometry/GeometryCore.h"
 #include "larcoreobj/SummaryData/POTSummary.h"
 #include "larcoreobj/SimpleTypesAndConstants/geo_types.h"
-//#include "lardata/DetectorInfoServices/DetectorClocksService.h"
+// #include "lardata/DetectorInfoServices/DetectorClocksService.h"
 #include "lardataobj/RecoBase/Cluster.h"
 #include "lardataobj/RecoBase/Hit.h"
 #include "lardataobj/RecoBase/PFParticle.h"
+#include "lardataobj/RecoBase/PFParticleMetadata.h"
+#include "lardataobj/RecoBase/Track.h"
+#include "lardataobj/RecoBase/Shower.h"
+#include "lardataobj/RecoBase/Slice.h"
 #include "lardataobj/Simulation/SimChannel.h"
 #include "larsim/Simulation/LArG4Parameters.h"
 #include "nusimdata/SimulationBase/MCParticle.h"
@@ -30,6 +34,19 @@
 #include "canvas/Utilities/InputTag.h"
 #include "fhiclcpp/ParameterSet.h"
 #include "messagefacility/MessageLogger/MessageLogger.h"
+#include "canvas/Persistency/Common/FindManyP.h"
+
+#include "detdataformats/trigger/TriggerObjectOverlay.hpp"
+#include "detdataformats/trigger/TriggerPrimitive.hpp"
+#include "detdataformats/trigger/TriggerActivityData.hpp"
+#include "detdataformats/trigger/TriggerCandidateData.hpp"
+
+#include "dunereco/FDSensOpt/NeutrinoAngularRecoAlg/NeutrinoAngularRecoAlg.h"
+#include "dunereco/FDSensOpt/NeutrinoEnergyRecoAlg/NeutrinoEnergyRecoAlg.h"
+#include "dunereco/AnaUtils/DUNEAnaEventUtils.h"
+#include "dunereco/AnaUtils/DUNEAnaPFParticleUtils.h"
+#include "dunereco/AnaUtils/DUNEAnaTrackUtils.h"
+#include "dunereco/AnaUtils/DUNEAnaShowerUtils.h"
 
 // Additional Framework includes
 #include "art_root_io/TFileService.h"
@@ -83,7 +100,10 @@ private:
                               ///< simulated particles through the detector
   art::InputTag fPFParticleLabel;
   double fSetPOT;
-  
+  int fDecaynum;
+ 
+  unsigned int fTA;
+
   // MCTruth information
   int fSimPDG;     ///< PDG ID of the particle being processed
   int fSimTrackID; ///< GEANT ID of the particle being processed
@@ -97,8 +117,6 @@ private:
 
   bool fInFV;
 
-  TH1D *hMCNeutrinoEnergy;
-  
   // Geomtry Information
   geo::GeometryCore const* fGeometryService; ///< pointer to Geometry provider
   std::vector<double> fFiducialBoundaries;
@@ -108,11 +126,39 @@ private:
   double fGoodPOT;
 
   // Pandora PFParticle information
-  int fNPFParticles;
-  int fNPrimaries;
-  int fNPrimaryDaughters;
-  TH1D *hTriggeredNeutrinoEnergy;
-  TH1D *hRecoNeutrinoEnergy;
+  std::vector<int> fnuSliceKey;
+  std::vector<int> fnuID;
+  std::vector<int> fRecoPDG;
+  std::vector<int> fnuScore;
+  std::vector<int> fSliceIndex;
+  unsigned int fNPFParticles;
+  unsigned int fNPrimaryChildren;
+  unsigned int fNNeutrinos;
+
+  std::vector<double> fRecoVertexX;
+  std::vector<double> fRecoVertexY;
+  std::vector<double> fRecoVertexZ;
+ 
+  dune::NeutrinoAngularRecoAlg fNeutrinoRecoAngle;
+  dune::NeutrinoEnergyRecoAlg fNeutrinoRecoEnergy;
+
+  std::vector<double> fNuAngleRecoX;
+  std::vector<double> fNuAngleRecoY;
+  std::vector<double> fNuAngleRecoZ;
+
+  std::vector<double> fNuEnergy;
+
+  std::vector<std::vector<unsigned int>> vChildIsTrack;
+  std::vector<std::vector<unsigned int>> vChildIsShower;
+  std::vector<std::vector<double>> vTrackDirectionX;
+  std::vector<std::vector<double>> vTrackDirectionY;
+  std::vector<std::vector<double>> vTrackDirectionZ;
+  std::vector<std::vector<double>> vShowerDirectionX;
+  std::vector<std::vector<double>> vShowerDirectionY;
+  std::vector<std::vector<double>> vShowerDirectionZ;
+  std::vector<std::vector<double>> vKineticEnergyTrack;
+  std::vector<std::vector<double>> vShowerEnergy;
+
 };
 
 
@@ -123,7 +169,11 @@ ana::PandoraNeutrinoAnaProtoDUNE::PandoraNeutrinoAnaProtoDUNE(fhicl::ParameterSe
   , fMCTruthLabel(p.get<std::string>("MCTruthLabel"))
   , fPFParticleLabel(p.get<std::string>("PFParticleLabel"))
   , fSetPOT(p.get<double>("SetPOT"))
-
+  , fDecaynum(p.get<int>("decay"))
+  , fNeutrinoRecoAngle(p, "pandoraTrack", "pandoraShower", "pandora",
+      "wclsdatahd", "pandoraTrack", "pandoraShower", "pandora")
+  , fNeutrinoRecoEnergy(p, "pandoraTrack", "pandoraShower", "pandora",
+      "wclsdatahd", "pandoraTrack", "pandoraShower", "pandora")
   // More initializers here.
 {
   
@@ -154,11 +204,19 @@ void ana::PandoraNeutrinoAnaProtoDUNE::analyze(art::Event const& e)
   fRun = e.run();
   fSubRun = e.subRun();
 
-  fNPFParticles = 0;
-  fNPrimaries = 0;
-  fNPrimaryDaughters = 0;
-
   fInFV = false;
+  
+  art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
+  if (!e.getByLabel("tamakerTPC", taHandle)) {
+      fTA = 0;
+  } else {
+    if (taHandle->size() == 0) {
+      fTA = 0;
+    } else {
+      std::cout << ">>> Found " << taHandle->size() << " TAs in Event " << fEventID << std::endl;
+      fTA = 1;
+    }
+  }
 
   // Define a "handle" to point to a vector of the objects.
   auto truthHandle = e.getValidHandle<std::vector<simb::MCTruth>>(fMCTruthLabel);
@@ -208,55 +266,137 @@ void ana::PandoraNeutrinoAnaProtoDUNE::analyze(art::Event const& e)
       fSimulationNtuple->Fill();
     }
   }
-  hMCNeutrinoEnergy->Fill(fE, fSetPOT/fPOT);
 
-  art::Handle<std::vector<recob::PFParticle>> pfpHandle;
-  //std::vector<art::Ptr<recob::PFParticle>> pfpVec;
-  if (!e.getByLabel(fPFParticleLabel, pfpHandle)) { 
-    return;
+  art::ValidHandle<std::vector<recob::Slice>> sliceHandle = e.getValidHandle<std::vector<recob::Slice>>("pandora");
+  std::vector<art::Ptr<recob::Slice>> sliceVector;
+
+  if (sliceHandle.isValid()) art::fill_ptr_vector(sliceVector, sliceHandle);
+
+  art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, "pandora");
+
+  fnuSliceKey.clear();
+  fnuID.clear();
+  fRecoPDG.clear();
+  fNPFParticles = 0;
+  fNNeutrinos = 0;
+  fNPrimaryChildren = 0;
+  fRecoVertexX.clear();
+  fRecoVertexY.clear();
+  fRecoVertexZ.clear();
+  fNuAngleRecoX.clear();
+  fNuAngleRecoY.clear();
+  fNuAngleRecoZ.clear();
+  fNuEnergy.clear();
+  vChildIsTrack.clear();
+  vChildIsShower.clear();
+  vTrackDirectionX.clear();
+  vTrackDirectionY.clear();
+  vTrackDirectionZ.clear();
+  vShowerDirectionX.clear();
+  vShowerDirectionY.clear();
+  vShowerDirectionZ.clear();
+
+  for (const art::Ptr<recob::Slice> &slice : sliceVector) {
+    std::vector<art::Ptr<recob::PFParticle>> slicePFPs(slicePFPAssoc.at(slice.key()));
+    for (const art::Ptr<recob::PFParticle> &slicePFP : slicePFPs) {
+      bool isNeutrino = dune_ana::DUNEAnaPFParticleUtils::IsNeutrino(slicePFP);
+      bool isPrimary = slicePFP->IsPrimary();
+
+      if (!(isNeutrino && isPrimary)) continue;
+
+      fNNeutrinos++;
+      fnuSliceKey.push_back(slice.key());
+      fnuID.push_back(slicePFP->Self());
+      fNPFParticles = slicePFPs.size();
+      fNPrimaryChildren = slicePFP->NumDaughters();
+      fRecoPDG.push_back(slicePFP->PdgCode());
+
+      art::Ptr<larpandoraobj::PFParticleMetadata> pandoraMetaData = dune_ana::DUNEAnaPFParticleUtils::GetMetadata(slicePFP, e, "pandora");
+      std::map<std::string, float> fPFPPropertiesMap = pandoraMetaData->GetPropertiesMap();
+      fnuScore.push_back(fPFPPropertiesMap["NuScore"]);
+      fSliceIndex.push_back(fPFPPropertiesMap["SliceIndex"]);
+
+      art::Ptr<recob::Vertex> nu_vertex = dune_ana::DUNEAnaPFParticleUtils::GetVertex(slicePFP, e, "pandora");
+      auto v_point = nu_vertex->position();
+      dune::Point_t default_v_point;
+      default_v_point.SetCoordinates(v_point.x(), v_point.y(), v_point.z());
+
+      fRecoVertexX.push_back(default_v_point.x());
+      fRecoVertexY.push_back(default_v_point.y());
+      fRecoVertexZ.push_back(default_v_point.z());
+
+      // Get direction of overall shower from atmospheric reco code
+      dune::AngularRecoOutput nu_angle = fNeutrinoRecoAngle.CalculateNeutrinoAngle(e, slice, default_v_point);
+      fNuAngleRecoX.push_back(nu_angle.fRecoDirection.x());
+      fNuAngleRecoY.push_back(nu_angle.fRecoDirection.y());
+      fNuAngleRecoZ.push_back(nu_angle.fRecoDirection.z());
+
+      dune::EnergyRecoOutput energy_output = fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, slice, true);
+
+      fNuEnergy.push_back(energy_output.fNuLorentzVector.E());
+
+      std::vector<art::Ptr<recob::PFParticle>> vNuChildren = dune_ana::DUNEAnaPFParticleUtils::GetChildParticles(slicePFP, e, "pandora");
+  
+      std::vector<unsigned int> vNuChildIsTrack;
+      std::vector<unsigned int> vNuChildIsShower;
+      std::vector<double> vNuTrackDirectionX;
+      std::vector<double> vNuTrackDirectionY;
+      std::vector<double> vNuTrackDirectionZ;
+      std::vector<double> vNuShowerDirectionX;
+      std::vector<double> vNuShowerDirectionY;
+      std::vector<double> vNuShowerDirectionZ;
+      std::vector<double> vNuKineticEnergyTrack;
+      std::vector<double> vNuShowerEnergy;
+
+      for (const art::Ptr<recob::PFParticle> &childPFP : vNuChildren) {
+        if (dune_ana::DUNEAnaPFParticleUtils::IsTrack(childPFP, e, "pandora", "pandoraTrack")) {
+          vNuChildIsTrack.push_back(1);
+          art::Ptr<recob::Track> track = dune_ana::DUNEAnaPFParticleUtils::GetTrack(childPFP, e, "pandora", "pandoraTrack");
+          vNuTrackDirectionX.push_back(track->StartDirection().x());
+          vNuTrackDirectionY.push_back(track->StartDirection().y());
+          vNuTrackDirectionZ.push_back(track->StartDirection().z());
+
+          art::Ptr<anab::Calorimetry> track_cal = dune_ana::DUNEAnaTrackUtils::GetCalorimetry(track, e, "pandoraTrack", "pandoracalonosce");
+          vNuKineticEnergyTrack.push_back(track_cal->KineticEnergy());
+        } else {
+          vNuChildIsTrack.push_back(0);
+        }
+        if (dune_ana::DUNEAnaPFParticleUtils::IsShower(childPFP, e, "pandora", "pandoraShower")) {
+          vNuChildIsShower.push_back(1);
+          art::Ptr<recob::Shower> shower = dune_ana::DUNEAnaPFParticleUtils::GetShower(childPFP, e, "pandora", "pandoraShower");
+          vNuShowerDirectionX.push_back(shower->Direction().x());
+          vNuShowerDirectionY.push_back(shower->Direction().y());
+          vNuShowerDirectionZ.push_back(shower->Direction().z());
+          if (!shower->Energy().empty()) {
+            vNuShowerEnergy.push_back(shower->Energy().at(0));
+          } else {
+            vNuShowerEnergy.push_back(0);
+          }
+        } else {
+          vNuChildIsShower.push_back(0);
+        }
+
+      }
+      // Fill child information into neutrino vectors
+      vChildIsTrack.push_back(vNuChildIsTrack);
+      vChildIsShower.push_back(vNuChildIsShower);
+      vTrackDirectionX.push_back(vNuTrackDirectionX);
+      vTrackDirectionY.push_back(vNuTrackDirectionY);
+      vTrackDirectionZ.push_back(vNuTrackDirectionZ);
+      vShowerDirectionX.push_back(vNuShowerDirectionX);
+      vShowerDirectionY.push_back(vNuShowerDirectionY);
+      vShowerDirectionZ.push_back(vNuShowerDirectionZ);
+      vKineticEnergyTrack.push_back(vNuKineticEnergyTrack);
+      vShowerEnergy.push_back(vNuShowerEnergy);
+
+      // Try connecting to MCTruth
+      //std::vector<art::Ptr<recob::Hit>> recoHits = dune_ana::DUNEAnaPFParticleUtils::GetHits(slicePFP, e, "pandora");
+    }
+
   }
-  auto const &pfpVec = *pfpHandle;
-  /*if (e.getByLabel(fPFParticleLabel, pfpHandle)) {
-    art::fill_ptr_vector(pfpVec, pfpHandle);
-  } else {
-    return;
-  }*/
-  // Made it to here means that the event at least triggered so that Pandora was run
-  hTriggeredNeutrinoEnergy->Fill(fE, fSetPOT/fPOT);
-
-  // Check if there are any PFParticles
-  if (pfpVec.empty()) {
-    std::cout << "pfpVec.empty - should I be here?" << std::endl;
-    return;
-  }
-  // Made it to here means that the event at least triggered so that Pandora was run
-  //hTriggeredNeutrinoEnergy->Fill(fE, );
-
-  // Initialise neutrino ID
-  size_t neutrinoID(std::numeric_limits<size_t>::max());
-
-  // Loop over PFParticles and look for a reconstructed neutrino
-  //for (const art::Ptr<recob::PFParticle>& pfp : pfpVec) {
-  for (const auto& pfp : pfpVec) {
-    fNPFParticles++;
-
-    //if (!pfp->IsPrimary()) continue;
-    if (!pfp.IsPrimary()) continue;
-
-    //neutrinoID = pfp->Self();
-    //fNPrimaryDaughters = pfp->NumDaighters();
-    neutrinoID = pfp.Self();
-    fNPrimaryDaughters = pfp.NumDaughters();
-    fNPrimaries++;
-  }
-
-  // Check that a reconstructed neutrino was found
-  if (neutrinoID == std::numeric_limits<size_t>::max()) return;
-
-  // Made to here so neutrino was reconstructed;
-  hRecoNeutrinoEnergy->Fill(fE, fSetPOT/fPOT);
 
   fRecoNtuple->Fill();
+
 }
 
 //-----------------------------------------------
@@ -265,15 +405,13 @@ void ana::PandoraNeutrinoAnaProtoDUNE::beginJob() {
   // Implementation of optional member function here.
   art::ServiceHandle<art::TFileService> tfs;
 
-  hMCNeutrinoEnergy = tfs->make<TH1D>("Total_MC_Nu_Energy", ";Energy (GeV);", 20, 0, 200);
-  hTriggeredNeutrinoEnergy = tfs->make<TH1D>("Triggered_Nu_Energy", ";Energy (GeV);", 20, 0, 200);
-  hRecoNeutrinoEnergy = tfs->make<TH1D>("Reco_Nu_Energy", ";Energy (GeV);", 20, 0, 200);
-
   // Get TFileService to create an output tree
   fSimulationNtuple = tfs->make<TTree>("GenieTruth", "GENIE Output Tree");
 
   // Add branches to TTree
   fSimulationNtuple->Branch("eventID", &fEventID);
+  fSimulationNtuple->Branch("Decaynum", &fDecaynum);
+  fSimulationNtuple->Branch("TA", &fTA);
   fSimulationNtuple->Branch("SubRun", &fSubRun, "SubRun/I");
   fSimulationNtuple->Branch("Run", &fRun, "Run/I");
   fSimulationNtuple->Branch("PDG", &fSimPDG, "PDG/I");
@@ -288,11 +426,35 @@ void ana::PandoraNeutrinoAnaProtoDUNE::beginJob() {
   
   fRecoNtuple = tfs->make<TTree>("Reco", "Pandora Reco Output Tree");
   fRecoNtuple->Branch("eventID", &fEventID);
+  fRecoNtuple->Branch("Decaynum", &fDecaynum);
+  fRecoNtuple->Branch("TA", &fTA);
   fRecoNtuple->Branch("SubRun", &fSubRun, "SubRun/I");
   fRecoNtuple->Branch("Run", &fRun, "Run/I");
   fRecoNtuple->Branch("nPFParticles", &fNPFParticles);
-  fRecoNtuple->Branch("nPrimaries", &fNPrimaries);
-  fRecoNtuple->Branch("nPrimaryDaughters", &fNPrimaryDaughters);
+  fRecoNtuple->Branch("nNeutrinos", &fNNeutrinos);
+  fRecoNtuple->Branch("nPrimaryChildren", &fNPrimaryChildren);
+  fRecoNtuple->Branch("nuSliceKey", &fnuSliceKey);
+  fRecoNtuple->Branch("SliceIndex", &fSliceIndex);
+  fRecoNtuple->Branch("nuID", &fnuID);
+  fRecoNtuple->Branch("nuScore", &fnuScore);
+  fRecoNtuple->Branch("RecoPDG", &fRecoPDG);
+  fRecoNtuple->Branch("RecoVertexX", &fRecoVertexX);
+  fRecoNtuple->Branch("RecoVertexY", &fRecoVertexY);
+  fRecoNtuple->Branch("RecoVertexZ", &fRecoVertexZ);
+  fRecoNtuple->Branch("NuAngleRecoX", &fNuAngleRecoX);
+  fRecoNtuple->Branch("NuAngleRecoY", &fNuAngleRecoY);
+  fRecoNtuple->Branch("NuAngleRecoZ", &fNuAngleRecoZ);
+  fRecoNtuple->Branch("NuEnergy", &fNuEnergy);
+  fRecoNtuple->Branch("vChildIsTrack", &vChildIsTrack);
+  fRecoNtuple->Branch("vChildIsShower", &vChildIsShower);
+  fRecoNtuple->Branch("vTrackDirectionX", &vTrackDirectionX);
+  fRecoNtuple->Branch("vTrackDirectionY", &vTrackDirectionY);
+  fRecoNtuple->Branch("vTrackDirectionZ", &vTrackDirectionZ);
+  fRecoNtuple->Branch("vShowerDirectionX", &vShowerDirectionX);
+  fRecoNtuple->Branch("vShowerDirectionY", &vShowerDirectionY);
+  fRecoNtuple->Branch("vShowerDirectionZ", &vShowerDirectionZ);
+  fRecoNtuple->Branch("KineticEnergyTrack", &vKineticEnergyTrack);
+  fRecoNtuple->Branch("ShowerEnergy", &vShowerEnergy);
 
   fSubrunTree = tfs->make<TTree>("SubRunTree", "SubRun-level information");
   fSubrunTree->Branch("POT", &fPOT, "POT/D");
