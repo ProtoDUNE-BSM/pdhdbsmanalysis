@@ -92,6 +92,44 @@ public:
 
 private:
 
+  // Create output TTree
+  TTree *fTree_reco;
+  TTree *fTree_truth;
+  
+  // Tree variables reco
+  unsigned int fEventID_reco;
+  double fVx_reco;
+  double fVy_reco;
+  double fVz_reco;
+  int fPdgCode_reco;
+  double fEnergy_reco;
+  double fDirectionX_reco;
+  double fDirectionY_reco;
+  double fDirectionZ_reco;
+  int fNHits_reco;
+  int fNPFPs_reco;
+  int fTrueOriginID_reco;
+  int fEventNumber_reco;
+  
+  // Tree variables true
+  unsigned int fEventID_true;
+  double fVx_true;
+  double fVy_true;
+  double fVz_true;
+  double fE_true;
+  double fPx_true;
+  double fPy_true;
+  double fPz_true;
+  int fPdgCode_true;
+  int fMother_true;
+  double fPOT_true;
+  double fGoodPOT_true;
+  double fTotalPOT_true;
+  int fTA_true;
+  int fEventNumber_true;
+
+
+
   // Declare member data here.
   std::string fTrackLabel;
   std::string fShowerLabel;
@@ -115,7 +153,8 @@ private:
   double fPOT = 0;
   double fTotalPOT = 0;
   double fGoodPOT = 0;
-
+  //
+  int fEventNumber = 0;
 
 };
 
@@ -148,16 +187,47 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
   // Then I will get the PFParticles associated with the slice. 
   // If the PFParticle is a neutrino, I will get the vertex and the track associated with it. 
   // The vertex should be well inside the detector, and I want a number of daughters of the neutrino.
+  
+  // Initialize the variables to 0
+  fEventID_reco = 0;
+  fVx_reco = 0;
+  fVy_reco = 0;
+  fVz_reco = 0;
+  fPdgCode_reco = 0;
+  fEnergy_reco = 0;
+  fDirectionX_reco = 0;
+  fDirectionY_reco = 0;
+  fDirectionZ_reco = 0;
+  fNHits_reco = 0;
+  fNPFPs_reco = 0;
+  fTrueOriginID_reco = 0;
+  fEventNumber_reco = 0;  
 
+  fEventID_true = 0;
+  fVx_true = 0;
+  fVy_true = 0;
+  fVz_true = 0;
+  fE_true = 0;
+  fPx_true = 0;
+  fPy_true = 0;
+  fPz_true = 0;
+  fPdgCode_true = 0;
+  fMother_true = 0;
+  fPOT_true = 0;
+  fGoodPOT_true = 0;
+  fTotalPOT_true = 0;
+  fTA_true = 0;
+  fEventNumber_true = 0;
+  // open the output files
   std::ofstream outfile_truth;
   outfile_truth.open(fOutputFolder + "/" + fOutputFileName+"_truth.txt", std::ios_base::app);
   // outfile_truth<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<std::endl;
 
   std::ofstream outfile_recos;
   outfile_recos.open(fOutputFolder + "/" + fOutputFileName+"_pfparticle.txt", std::ios_base::app);
-  outfile_recos<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<std::endl;
-
-
+  fEventNumber++;
+  outfile_recos<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<fEventNumber<<std::endl;  
+  
 
   // get the trigger information
   art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
@@ -184,9 +254,27 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
         const auto &neutrino = nu.Nu();
         fE = neutrino.E();
         outfile_truth << neutrino.Vx() << " " << neutrino.Vy() << " " << neutrino.Vz() << " " << fE << " " << neutrino.Px() << " " << neutrino.Py() << " " << neutrino.Pz() << " " << neutrino.PdgCode() << " " << neutrino.Mother() << " " << fPOT << " " << fGoodPOT << " " << fTotalPOT << " " << fTA << std::endl;
+        // fill the variables
+        fEventID_true = e.id().event();
+        fVx_true = neutrino.Vx();
+        fVy_true = neutrino.Vy();
+        fVz_true = neutrino.Vz();
+        fE_true = fE;
+        fPx_true = neutrino.Px();
+        fPy_true = neutrino.Py();
+        fPz_true = neutrino.Pz();
+        fPdgCode_true = neutrino.PdgCode();
+        fMother_true = neutrino.Mother();
+        fPOT_true = fPOT;
+        fGoodPOT_true = fGoodPOT;
+        fTotalPOT_true = fTotalPOT;
+        fTA_true = fTA;
+        fEventNumber_true = fEventNumber;
       }
     }
   }
+  fTree_truth->Fill();
+
 
   // -------------------------------------------------------------------
   
@@ -222,16 +310,12 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
       art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
       std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
       
-      std::cout << "Vertex retrieved" << std::endl;
       std::vector<double> info = GetDaugtherInfoDFS(pfparticlePtr, e);
       
-      std::cout << "info retrieved" << std::endl;
-
       int trueOriginID = -999;
       if (fGetTruth){
         trueOriginID = GetTrueInfo(pfparticlePtr, e);
       }
-      std::cout << "info retrieved" << std::endl;
 
       double vertex_x, vertex_y, vertex_z;
       if (vertices.size() > 0) {
@@ -245,12 +329,24 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
         vertex_z = -999;
       }
 
-      std::cout << "Vertex position: " << vertex_x << " " << vertex_y << " " << vertex_z << std::endl;
       int pdg = pfparticlePtr->PdgCode();
-      std::cout << "PDG code: " << pdg << std::endl;
 
       outfile_recos << vertex_x << " " << vertex_y << " " << vertex_z <<  " " << pdg << " " << info[0] << " " << info[1] << " " << info[2] << " " << info[3] << " " << info[4] << " " << info[5] << " " << trueOriginID << std::endl;
-      std::cout << "outprint" << std::endl;
+      // fill the variables
+      fEventID_reco = e.id().event();
+      fVx_reco = vertex_x;
+      fVy_reco = vertex_y;
+      fVz_reco = vertex_z;
+      fPdgCode_reco = pdg;
+      fEnergy_reco = info[2];
+      fDirectionX_reco = info[3];
+      fDirectionY_reco = info[4];
+      fDirectionZ_reco = info[5];
+      fNHits_reco = info[0];
+      fNPFPs_reco = info[1]; 
+      fTrueOriginID_reco = trueOriginID;
+      fEventNumber_reco = fEventNumber;
+      fTree_reco->Fill();
 
     }
   }
@@ -263,6 +359,7 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
 
   outfile_truth.close();
   outfile_recos.close();
+
 }
 
 double NeutrinoAna::FindNeutrinos::GetTotalEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e){
@@ -436,6 +533,42 @@ void NeutrinoAna::FindNeutrinos::beginSubRun(art::SubRun const& subRun) {
 void NeutrinoAna::FindNeutrinos::beginJob()
 {
   // Implementation of optional member function here.
+  // Get the TFileService to create the output TTree for us
+  art::ServiceHandle<art::TFileService> tfs;
+  // fTree = tfs->make<TTree>("tree", "Output TTree");
+  fTree_reco = tfs->make<TTree>("tree_reco", "Output TTree reco");
+  fTree_truth = tfs->make<TTree>("tree_truth", "Output TTree truth");
+
+  // Add branches to TTree
+  fTree_reco->Branch("eventID", &fEventID_reco);
+  fTree_reco->Branch("vx", &fVx_reco);
+  fTree_reco->Branch("vy", &fVy_reco);
+  fTree_reco->Branch("vz", &fVz_reco);
+  fTree_reco->Branch("pdgCode", &fPdgCode_reco);
+  fTree_reco->Branch("energy", &fEnergy_reco);
+  fTree_reco->Branch("directionX", &fDirectionX_reco);
+  fTree_reco->Branch("directionY", &fDirectionY_reco);
+  fTree_reco->Branch("directionZ", &fDirectionZ_reco);
+  fTree_reco->Branch("nHits", &fNHits_reco);
+  fTree_reco->Branch("nPFPs", &fNPFPs_reco);
+  fTree_reco->Branch("trueOriginID", &fTrueOriginID_reco);
+
+  fTree_truth->Branch("eventID", &fEventID_true);
+  fTree_truth->Branch("vx", &fVx_true);
+  fTree_truth->Branch("vy", &fVy_true);
+  fTree_truth->Branch("vz", &fVz_true);
+  fTree_truth->Branch("E", &fE_true);
+  fTree_truth->Branch("Px", &fPx_true);
+  fTree_truth->Branch("Py", &fPy_true);
+  fTree_truth->Branch("Pz", &fPz_true);
+  fTree_truth->Branch("pdgCode", &fPdgCode_true);
+  fTree_truth->Branch("mother", &fMother_true);
+  fTree_truth->Branch("POT", &fPOT_true);
+  fTree_truth->Branch("goodPOT", &fGoodPOT_true);
+  fTree_truth->Branch("totalPOT", &fTotalPOT_true);
+  fTree_truth->Branch("TA", &fTA_true);
+
+
 }
 
 void NeutrinoAna::FindNeutrinos::endJob()
