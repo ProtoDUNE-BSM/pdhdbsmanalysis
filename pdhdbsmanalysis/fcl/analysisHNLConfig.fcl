@@ -1,0 +1,26 @@
+BEGIN_PROLOG
+
+analyzeEventsHNL:
+{
+    module_type: "AnalyzeEventsHNL"
+
+
+    SliceLabel:       "pandora"
+    VertexLabel:      "pandora"
+    TrackLabel:       "pandoraTrack"
+    ParticleIDLabel:  "pandorapid"
+    ClusterLabel:     "pandora"
+    PFParticleLabel:  "pandora"
+    ShowerLabel:      "pandoraShower"
+    MCParticleLabel:  "largeant"
+    HitsModuleLabel:  "gaushit"
+    MCTruthLabel:     "generator"
+    CalorimetryLabel: "pandoracalo"
+    TALabel:          "tamakerTPC"
+    OutputFolder:     "/exp/dune/app/users/pmohan/out_folder/base/"
+    OutputFileName:   "testOut"
+    GetTruth:         true
+
+}
+
+END_PROLOG

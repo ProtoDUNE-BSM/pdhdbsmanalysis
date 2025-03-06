@@ -28,7 +28,6 @@ list(APPEND CMAKE_MODULE_PATH
 )
 
 include(CetCMakeEnv)
-set(${PROJECT_NAME}_CMAKE_PROJECT_VERSION_STRING 10.01.04-d00)
 cet_cmake_env()
 
 cet_set_compiler_flags(DIAGS CAUTIOUS
@@ -46,9 +45,12 @@ find_ups_product( nutools )
 find_ups_product( art )
 find_ups_product( artdaq_core )
 find_ups_product( dunedetdataformats )
-find_ups_product( dunereco )
-#find_package( dunereco )
 find_ups_product( cetbuildtools ) # LIBRARY_OUTPUT_DIRECTORY, etc.
+find_ups_product( dunereco ) 
+find_ups_product( larpandora )
+find_ups_product( larreco )
+find_ups_product( lardataobj )
+find_ups_product( detinfo )
 
 # macros for dictionary and simple_plugin
 include(ArtDictionary)

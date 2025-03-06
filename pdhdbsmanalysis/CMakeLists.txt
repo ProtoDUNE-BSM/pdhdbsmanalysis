@@ -10,23 +10,22 @@ art_make(BASENAME_ONLY
 	larcoreobj::SummaryData
 	lardataobj::RecoBase
 	lardataobj::Simulation
-  lardata::Utilities
-  lardata::RecoObjects
-  lardata::ArtDataHelper
 	larsim::Simulation
-  larreco::Calorimetry
+	larsim::MCCheater_BackTrackerService_service
+	larsim::MCCheater_ParticleInventoryService_service
+	larsim::Utils
 	nusimdata_SimulationBase
-  dunereco::AnaUtils
-  NeutrinoAngularRecoAlg
-  NeutrinoEnergyRecoAlg
 	art::Framework_Core
 	art::Framework_Principal
 	art::Framework_Services_Registry
 	art::Persistency_Common
-  artdaq_core::artdaq-core_Data
-  lardataobj::RawData
-  artdaq_core::artdaq-core_Data
-  artdaq_core::artdaq-core_Utilities
+	artdaq_core::artdaq-core_Data
+	lardata::Utilities
+	lardata::RecoObjects
+	lardata::ArtDataHelper
+  	lardataobj::RawData
+  	artdaq_core::artdaq-core_Data
+  	artdaq_core::artdaq-core_Utilities
 	canvas::canvas
 	messagefacility::MF_MessageLogger
 	hep_concurrency
@@ -41,8 +40,28 @@ art_make(BASENAME_ONLY
 	ROOT::Physics
 	ROOT::Tree
 	art_root_io::TFileService_service
+	dunereco::AnaUtils
+	larpandora::LArPandoraInterface
+	lardataalg::DetectorInfo
+	lardataobj::Simulation
+	larsim::MCCheater_BackTrackerService_service
+	larsim::MCCheater_ParticleInventoryService_service
+		larsim::Utils
+	lardata::Utilities
+	larevt::Filters
+	lardataobj::RawData
+	lardataobj::RecoBase
+	lardataobj::AnalysisBase
+	lardata::RecoObjects
+		lardata::ArtDataHelper
+	artdaq_core::artdaq-core_Data
+	lardataobj::RawData
+	artdaq_core::artdaq-core_Data
+	artdaq_core::artdaq-core_Utilities
 	)
 
 install_headers()
 install_source()
 install_fhicl()
+
+add_subdirectory(fcl)
