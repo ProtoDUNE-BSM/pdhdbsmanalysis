@@ -242,54 +242,60 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
         fPz_true = particle.Pz();
         fPdgCode_true = particle.PdgCode();
         fMother_true = particle.Mother();
+        
+        fTree_truth->Fill();
       }
     }
   }
 
-  fTree_truth->Fill();
+  
 
 
   // -------------------------------------------------------------------
   art::Handle<std::vector<recob::Slice>> sliceHandle = e.getHandle<std::vector<recob::Slice>>(fSliceLabel);
-  if (sliceHandle.isValid()){
+  if (sliceHandle.isValid()) {
       std::vector<art::Ptr<recob::Slice>> slicePtrVector;
       art::fill_ptr_vector(slicePtrVector, sliceHandle);
-  
-      double max_energy = 0;
-      art::Ptr<recob::Slice> most_energetic_slice;
+
+      // Loop over ALL slices, not just the most energetic one
       for (const art::Ptr<recob::Slice>& slicePtr : slicePtrVector) {
-          double energy = GetTotalEnergy(slicePtr, e);
-          if (energy > max_energy) {
-              max_energy = energy;
-              most_energetic_slice = slicePtr;
+          
+          // Get all PFParticles in this slice
+          art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fSliceLabel);
+          std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(slicePtr.key());
+
+          // Get PFParticle handle
+          art::Handle<std::vector<recob::PFParticle>> pfparticleHandle = e.getHandle<std::vector<recob::PFParticle>>(fPFParticleLabel);
+
+          // Loop over ALL PFParticles in this slice
+          for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
+              
+              // Get vertex information (check association validity first)
+              art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
+              double vertex_x = -999, vertex_y = -999, vertex_z = -999;
+              if (pfVertexAssoc.isValid() && pfVertexAssoc.size() > pfparticlePtr.key()) {
+                  std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
+                  if (!vertices.empty()) {
+                      vertex_x = vertices[0]->position().X();
+                      vertex_y = vertices[0]->position().Y();
+                      vertex_z = vertices[0]->position().Z();
+                  }
+              }
+
+              // Store reconstructed data
+              fVx_reco = vertex_x;
+              fVy_reco = vertex_y;
+              fVz_reco = vertex_z;
+              fPdgCode_reco = pfparticlePtr->PdgCode();
+              fEnergy_reco = GetTotalEnergy(slicePtr, e);
+              fEventID_reco = e.id().event();
+              
+              fTree_reco->Fill();
+
           }
       }
-  
-      art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fSliceLabel);
-      std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(most_energetic_slice.key());
-      art::Handle<std::vector<recob::PFParticle>> pfparticleHandle = e.getHandle<std::vector<recob::PFParticle>>(fPFParticleLabel);
-  
-    for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
-        art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
-        std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
-
-        double vertex_x = -999, vertex_y = -999, vertex_z = -999;
-        if (!vertices.empty()) {
-            vertex_x = vertices[0]->position().X();
-            vertex_y = vertices[0]->position().Y();
-            vertex_z = vertices[0]->position().Z();
-        }
-
-        // Get only the variables used in truth
-        fVx_reco = vertex_x;
-        fVy_reco = vertex_y;
-        fVz_reco = vertex_z;
-        fPdgCode_reco = pfparticlePtr->PdgCode();
-        fTree_reco->Fill();
-    }
   }
-}// end of analyse
-
+}
 double hnlAna::AnalyzeEventsHNL::GetTotalEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e){
 
   art::ValidHandle<std::vector<recob::Slice>> sliceHandle = e.getValidHandle<std::vector<recob::Slice>>(fSliceLabel);
