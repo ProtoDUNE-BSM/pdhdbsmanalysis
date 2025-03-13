@@ -95,6 +95,8 @@ private:
   // Create output TTree
   TTree *fTree_reco;
   TTree *fTree_truth;
+  TTree *fTree_aggregate;
+
   
   // Tree variables reco
   unsigned int fEventID_reco;
@@ -110,7 +112,8 @@ private:
   int fNPFPs_reco;
   int fTrueOriginID_reco;
   int fEventNumber_reco;
-  
+  int fPassCut;
+
   // Tree variables true
   unsigned int fEventID_true;
   double fVx_true;
@@ -127,6 +130,23 @@ private:
   double fTotalPOT_true;
   int fTA_true;
   int fEventNumber_true;
+
+  // Tree variables aggregate
+  unsigned int fEventID_aggregate;
+  double fVx_aggregate;
+  double fVy_aggregate;
+  double fVz_aggregate;
+  double fEnergy_aggregate;
+  double fDirectionX_aggregate;
+  double fDirectionY_aggregate;
+  double fDirectionZ_aggregate;
+  int fNHits_aggregate;
+  int fNPFPs_aggregate;
+  int fTrueOriginID_aggregate;
+  int fEventNumber_aggregate;
+  int fPassCut_aggregate;
+  int fSpillStatus_aggregate; 
+  double fTime_aggregate; 
 
 
 
@@ -202,6 +222,7 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
   fNPFPs_reco = 0;
   fTrueOriginID_reco = 0;
   fEventNumber_reco = 0;  
+  fPassCut = 0;
 
   fEventID_true = 0;
   fVx_true = 0;
@@ -218,15 +239,25 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
   fTotalPOT_true = 0;
   fTA_true = 0;
   fEventNumber_true = 0;
-  // open the output files
-  std::ofstream outfile_truth;
-  outfile_truth.open(fOutputFolder + "/" + fOutputFileName+"_truth.txt", std::ios_base::app);
-  // outfile_truth<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<std::endl;
 
-  std::ofstream outfile_recos;
-  outfile_recos.open(fOutputFolder + "/" + fOutputFileName+"_pfparticle.txt", std::ios_base::app);
+  fEventID_aggregate = 0;
+  fVx_aggregate = 0;
+  fVy_aggregate = 0;
+  fVz_aggregate = 0;
+  fEnergy_aggregate = 0;
+  fDirectionX_aggregate = 0;
+  fDirectionY_aggregate = 0;
+  fDirectionZ_aggregate = 0;
+  fNHits_aggregate = 0;
+  fNPFPs_aggregate = 0;
+  fTrueOriginID_aggregate = 0;
+  fEventNumber_aggregate = 0;
+  fPassCut_aggregate = 0;
+  fSpillStatus_aggregate = 0;
+  fTime_aggregate = 0;
+
+
   fEventNumber++;
-  outfile_recos<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<0<<" "<<fEventNumber<<std::endl;  
   
 
   // get the trigger information
@@ -253,7 +284,6 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
         const auto &nu = truth.GetNeutrino();
         const auto &neutrino = nu.Nu();
         fE = neutrino.E();
-        outfile_truth << neutrino.Vx() << " " << neutrino.Vy() << " " << neutrino.Vz() << " " << fE << " " << neutrino.Px() << " " << neutrino.Py() << " " << neutrino.Pz() << " " << neutrino.PdgCode() << " " << neutrino.Mother() << " " << fPOT << " " << fGoodPOT << " " << fTotalPOT << " " << fTA << std::endl;
         // fill the variables
         fEventID_true = e.id().event();
         fVx_true = neutrino.Vx();
@@ -302,9 +332,6 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
     art::Handle<std::vector<recob::PFParticle>> pfparticleHandle = e.getHandle<std::vector<recob::PFParticle>>(fPFParticleLabel);
 
     for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
-      if (pfparticlePtr->IsPrimary() and (pfparticlePtr->PdgCode() == 12 or pfparticlePtr->PdgCode() == 14 or pfparticlePtr->PdgCode() == 16 or pfparticlePtr->PdgCode() == -12 or pfparticlePtr->PdgCode() == -14 or pfparticlePtr->PdgCode() == -16)) {
-        std::cout << "Neutrino found" << std::endl;
-      }
 
 
       art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
@@ -329,9 +356,35 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
         vertex_z = -999;
       }
 
-      int pdg = pfparticlePtr->PdgCode();
+    int pdg = pfparticlePtr->PdgCode();
+      if (pfparticlePtr->IsPrimary() and (pfparticlePtr->PdgCode() == 12 or pfparticlePtr->PdgCode() == 14 or pfparticlePtr->PdgCode() == 16 or pfparticlePtr->PdgCode() == -12 or pfparticlePtr->PdgCode() == -14 or pfparticlePtr->PdgCode() == -16)) {
+        std::cout << "Neutrino found" << std::endl;
+        if (vertex_y<=550 and vertex_z >= 20){
+          if (info[1] >=4) {
+            fPassCut = 1;
+          }
+        }
+        // fill the variables
+        fVx_aggregate = vertex_x;
+        fVy_aggregate = vertex_y;
+        fVz_aggregate = vertex_z;
+        fNPFPs_aggregate = info[1];
+      }
 
-      outfile_recos << vertex_x << " " << vertex_y << " " << vertex_z <<  " " << pdg << " " << info[0] << " " << info[1] << " " << info[2] << " " << info[3] << " " << info[4] << " " << info[5] << " " << trueOriginID << std::endl;
+
+      // -------------------------------------------------------------------
+      // can be improved
+      if (trueOriginID == 12 or trueOriginID == 14 or trueOriginID == 16 or trueOriginID == -12 or trueOriginID == -14 or trueOriginID == -16) {
+        fTrueOriginID_aggregate = trueOriginID;
+      }
+
+      fEnergy_aggregate += info[2];
+      fDirectionX_aggregate += info[3];
+      fDirectionY_aggregate += info[4];
+      fDirectionZ_aggregate += info[5];
+      fNHits_aggregate += info[0];
+      // -------------------------------------------------------------------
+
       // fill the variables
       fEventID_reco = e.id().event();
       fVx_reco = vertex_x;
@@ -348,7 +401,14 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
       fEventNumber_reco = fEventNumber;
       fTree_reco->Fill();
 
+
+
     }
+
+    fEventID_aggregate = e.id().event();
+    fEventNumber_aggregate = fEventNumber;
+    fPassCut_aggregate = fPassCut;
+
   }
   else {
     std::cout << "Slice handle is not valid" << std::endl;
@@ -357,8 +417,19 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
   std::cout << "End of event" << std::endl;
 
 
-  outfile_truth.close();
-  outfile_recos.close();
+  uint32_t timeHigh_ns = e.time().timeHigh();
+  uint32_t timeLow_ns = e.time().timeLow();
+
+  fTime_aggregate = timeHigh_ns*1e9 + timeLow_ns;
+  std::cout << "Time: " << fTime_aggregate << std::endl;
+
+  // normalize the direction
+  double norm = sqrt(fDirectionX_aggregate*fDirectionX_aggregate + fDirectionY_aggregate*fDirectionY_aggregate + fDirectionZ_aggregate*fDirectionZ_aggregate);
+  fDirectionX_aggregate = fDirectionX_aggregate/norm;
+  fDirectionY_aggregate = fDirectionY_aggregate/norm;
+  fDirectionZ_aggregate = fDirectionZ_aggregate/norm;
+   
+  fTree_aggregate->Fill();
 
 }
 
@@ -538,6 +609,8 @@ void NeutrinoAna::FindNeutrinos::beginJob()
   // fTree = tfs->make<TTree>("tree", "Output TTree");
   fTree_reco = tfs->make<TTree>("tree_reco", "Output TTree reco");
   fTree_truth = tfs->make<TTree>("tree_truth", "Output TTree truth");
+  fTree_aggregate = tfs->make<TTree>("tree_aggregate", "Output TTree aggregate");
+
 
   // Add branches to TTree
   fTree_reco->Branch("eventID", &fEventID_reco);
@@ -552,6 +625,8 @@ void NeutrinoAna::FindNeutrinos::beginJob()
   fTree_reco->Branch("nHits", &fNHits_reco);
   fTree_reco->Branch("nPFPs", &fNPFPs_reco);
   fTree_reco->Branch("trueOriginID", &fTrueOriginID_reco);
+  fTree_reco->Branch("eventNumber", &fEventNumber_reco);
+  fTree_reco->Branch("passCut", &fPassCut);
 
   fTree_truth->Branch("eventID", &fEventID_true);
   fTree_truth->Branch("vx", &fVx_true);
@@ -567,6 +642,24 @@ void NeutrinoAna::FindNeutrinos::beginJob()
   fTree_truth->Branch("goodPOT", &fGoodPOT_true);
   fTree_truth->Branch("totalPOT", &fTotalPOT_true);
   fTree_truth->Branch("TA", &fTA_true);
+  fTree_truth->Branch("eventNumber", &fEventNumber_true);
+
+  fTree_aggregate->Branch("eventID", &fEventID_aggregate);
+  fTree_aggregate->Branch("vx", &fVx_aggregate);
+  fTree_aggregate->Branch("vy", &fVy_aggregate);
+  fTree_aggregate->Branch("vz", &fVz_aggregate);
+  fTree_aggregate->Branch("energy", &fEnergy_aggregate);
+  fTree_aggregate->Branch("directionX", &fDirectionX_aggregate);
+  fTree_aggregate->Branch("directionY", &fDirectionY_aggregate);
+  fTree_aggregate->Branch("directionZ", &fDirectionZ_aggregate);
+  fTree_aggregate->Branch("nHits", &fNHits_aggregate);
+  fTree_aggregate->Branch("nPFPs", &fNPFPs_aggregate);
+  fTree_aggregate->Branch("trueOriginID", &fTrueOriginID_aggregate);
+  fTree_aggregate->Branch("eventNumber", &fEventNumber_aggregate);
+  fTree_aggregate->Branch("passCut", &fPassCut_aggregate);
+  fTree_aggregate->Branch("spillStatus", &fSpillStatus_aggregate);
+  fTree_aggregate->Branch("time", &fTime_aggregate);
+
 
 
 }
