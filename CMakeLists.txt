@@ -46,8 +46,11 @@ find_ups_product( nutools )
 find_ups_product( art )
 find_ups_product( artdaq_core )
 find_ups_product( dunedetdataformats )
-find_ups_product( dunereco )
-#find_package( dunereco )
+find_ups_product( dunereco ) 
+find_ups_product( larpandora )
+find_ups_product( larreco )
+find_ups_product( lardataobj )
+find_ups_product( detinfo )
 find_ups_product( cetbuildtools ) # LIBRARY_OUTPUT_DIRECTORY, etc.
 
 # macros for dictionary and simple_plugin

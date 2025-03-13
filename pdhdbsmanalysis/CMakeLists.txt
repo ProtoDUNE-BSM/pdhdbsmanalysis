@@ -1,5 +1,7 @@
 # basic source code CMakeLists.txt
 
+add_subdirectory(fcl)
+
 art_make(BASENAME_ONLY
 	MODULE_LIBRARIES
 	larcore::ServiceUtil	
@@ -7,26 +9,27 @@ art_make(BASENAME_ONLY
 	larcorealg::Geometry
 	larcoreobj::SummaryData
 	larcoreobj::SimpleTypesAndConstants
-	larcoreobj::SummaryData
 	lardataobj::RecoBase
 	lardataobj::Simulation
-  lardata::Utilities
-  lardata::RecoObjects
-  lardata::ArtDataHelper
+	lardataobj::RawData
+	lardataobj::AnalysisBase
 	larsim::Simulation
-  larreco::Calorimetry
+	larsim::MCCheater_BackTrackerService_service
+	larsim::MCCheater_ParticleInventoryService_service
+	larsim::Utils
 	nusimdata_SimulationBase
-  dunereco::AnaUtils
-  NeutrinoAngularRecoAlg
-  NeutrinoEnergyRecoAlg
+	dunereco::AnaUtils
+	NeutrinoAngularRecoAlg
+	NeutrinoEnergyRecoAlg
 	art::Framework_Core
 	art::Framework_Principal
 	art::Framework_Services_Registry
 	art::Persistency_Common
-  artdaq_core::artdaq-core_Data
-  lardataobj::RawData
-  artdaq_core::artdaq-core_Data
-  artdaq_core::artdaq-core_Utilities
+	artdaq_core::artdaq-core_Data
+	lardata::Utilities
+	lardata::RecoObjects
+	lardata::ArtDataHelper
+  	artdaq_core::artdaq-core_Utilities
 	canvas::canvas
 	messagefacility::MF_MessageLogger
 	hep_concurrency
@@ -34,13 +37,16 @@ art_make(BASENAME_ONLY
 	fhiclcpp::types
 	cetlib::cetlib
 	cetlib_except::cetlib_except
-	ifdh::ifdh 
+	ifdh::ifdh
 	art_root_io::tfile_support
 	ROOT::Core
 	ROOT::Hist
 	ROOT::Physics
 	ROOT::Tree
 	art_root_io::TFileService_service
+	larpandora::LArPandoraInterface
+	lardataalg::DetectorInfo
+	larevt::Filters
 	)
 
 install_headers()
