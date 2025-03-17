@@ -41,6 +41,10 @@ art_make(BASENAME_ONLY
 	ROOT::Tree
 	art_root_io::TFileService_service
 	dunereco::AnaUtils
+	NeutrinoAngularRecoAlg
+	NeutrinoEnergyRecoAlg
+	larreco::Calorimetry
+	larreco::RecoAlg
 	larpandora::LArPandoraInterface
 	lardataalg::DetectorInfo
 	lardataobj::Simulation

@@ -33,6 +33,8 @@
 #include "dunereco/AnaUtils/DUNEAnaTrackUtils.h"
 #include "dunereco/AnaUtils/DUNEAnaUtilsBase.h"
 #include "larsim/Utils/TruthMatchUtils.h"
+#include "dunereco/FDSensOpt/NeutrinoAngularRecoAlg/NeutrinoAngularRecoAlg.h"
+#include "dunereco/FDSensOpt/NeutrinoEnergyRecoAlg/NeutrinoEnergyRecoAlg.h"
 
 #include "larpandora/LArPandoraInterface/LArPandoraHelper.h"
 
@@ -96,6 +98,10 @@ private:
   TTree *fTree_reco;
   TTree *fTree_truth;
   TTree *fTree_aggregate;
+
+  // dune reco functions
+  dune::NeutrinoAngularRecoAlg fNeutrinoRecoAngle;
+  dune::NeutrinoEnergyRecoAlg fNeutrinoRecoEnergy;
 
   
   // Tree variables reco
@@ -182,6 +188,8 @@ private:
 NeutrinoAna::FindNeutrinos::FindNeutrinos(fhicl::ParameterSet const& p)
   : EDAnalyzer{p}, 
   // More initializers here.
+  fNeutrinoRecoAngle(p, "pandoraTrack", "pandoraShower", "pandora", "wclsdatahd", "pandoraTrack", "pandoraShower", "pandora"),
+  fNeutrinoRecoEnergy(p, "pandoraTrack", "pandoraShower", "pandora", "wclsdatahd", "pandoraTrack", "pandoraShower", "pandora"),
   fTrackLabel(p.get<std::string>("TrackLabel")),
   fShowerLabel(p.get<std::string>("ShowerLabel")),
   fVertexLabel(p.get<std::string>("VertexLabel")),
@@ -195,6 +203,7 @@ NeutrinoAna::FindNeutrinos::FindNeutrinos(fhicl::ParameterSet const& p)
   fOutputFolder(p.get<std::string>("OutputFolder")),
   fOutputFileName(p.get<std::string>("OutputFileName")),
   fGetTruth(p.get<bool>("GetTruth"))
+
 {
   // Call appropriate consumes<>() for any products to be retrieved by this module.
 }
@@ -404,6 +413,23 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
 
 
     }
+    // improve the aggregate
+    // Get direction of overall shower from atmospheric reco code
+    dune::Point_t default_v_point;
+    default_v_point.SetCoordinates(fVx_aggregate, fVy_aggregate, fVz_aggregate);
+
+    dune::AngularRecoOutput nu_angle = fNeutrinoRecoAngle.CalculateNeutrinoAngle(e, most_energetic_slice, default_v_point);
+    fDirectionX_aggregate = nu_angle.fRecoDirection.x();
+    fDirectionY_aggregate = nu_angle.fRecoDirection.y();
+    fDirectionZ_aggregate = nu_angle.fRecoDirection.z();
+
+    // dune::EnergyRecoOutput energy_output = fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true);
+
+    // fEnergy_aggregate = energy_output.fNuLorentzVector.E();
+
+    // -------------------------------------------------------------------
+
+
 
     fEventID_aggregate = e.id().event();
     fEventNumber_aggregate = fEventNumber;
