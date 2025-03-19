@@ -10,11 +10,18 @@ art_make(BASENAME_ONLY
 	larcoreobj::SummaryData
 	lardataobj::RecoBase
 	lardataobj::Simulation
+  lardata::Utilities
+  lardata::RecoObjects
+  lardata::ArtDataHelper
 	larsim::Simulation
 	larsim::MCCheater_BackTrackerService_service
 	larsim::MCCheater_ParticleInventoryService_service
 	larsim::Utils
+  larreco::Calorimetry
 	nusimdata_SimulationBase
+  dunereco::AnaUtils
+  NeutrinoAngularRecoAlg
+  NeutrinoEnergyRecoAlg
 	art::Framework_Core
 	art::Framework_Principal
 	art::Framework_Services_Registry

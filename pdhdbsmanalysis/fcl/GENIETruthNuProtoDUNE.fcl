@@ -1,8 +1,30 @@
+### #include neutrino_branching_ratios.fcl
+
 BEGIN_PROLOG
+  
+numu:
+{
+  decay0: 0.2704
+  decay1: 0.999877
+  decay2: 4.56e-4
+  decay3: 0.6356
+  decay4: 0.03352
+}
 
 analyzegenieprotodunedm:
 {
   module_type: "GENIETruthNuProtoDUNE"
+  
+  #BR: @local::numu.decay0
+
+  #numu:
+  #{
+  #  decay0: 0.2704
+  #  decay1: 0.999877
+  #  decay2: 4.56e-4
+  #  decay3: 0.6356
+  #  decay4: 0.03352
+  #}
 }
 
 END_PROLOG
