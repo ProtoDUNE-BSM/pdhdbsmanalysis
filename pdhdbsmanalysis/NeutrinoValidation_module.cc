@@ -78,7 +78,7 @@ public:
   NeutrinoValidation& operator=(NeutrinoValidation const&) = delete;
   NeutrinoValidation& operator=(NeutrinoValidation&&) = delete;
 
-  double GetTotalEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e);
+  double GetSliceCaloEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e);
   unsigned int GetNuDaughterInfo(
     const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e,
     std::vector<unsigned int>& nuDaughterIsTrack, std::vector<unsigned int>& nuDaughterIsShower,
@@ -113,6 +113,7 @@ private:
   std::string fCalorimetryLabel;
   std::string fWireLabel;
   std::string fTALabel;
+  bool fSliceCaloEnergy;
 
   // Trigger activity flag 
   int fTA;
@@ -154,6 +155,7 @@ private:
   std::vector<double> fRecoEnergy; // Energy in GeV
   std::vector<double> fRecoVertexPosX, fRecoVertexPosY, fRecoVertexPosZ; // Vertex position in cm
   std::vector<double> fRecoDirCosX, fRecoDirCosY, fRecoDirCosZ; // Direction cosines
+  double fSliceEnergy; // Slice energy in GeV
 
   // Jagged arrays for thorough neutrino daughters event information
   std::vector<unsigned int> fDaughterIsTrack, fDaughterIsShower;
@@ -190,6 +192,7 @@ ana::NeutrinoValidation::NeutrinoValidation(fhicl::ParameterSet const& p)
   fCalorimetryLabel(p.get<std::string>("CalorimetryLabel")),
   fWireLabel(p.get<std::string>("WireLabel")),
   fTALabel(p.get<std::string>("TALabel")),
+  fSliceCaloEnergy(p.get<bool>("SliceCaloEnergy")),
   fNeutrinoRecoAngle(p, fTrackLabel, fShowerLabel, fHitLabel,
       fWireLabel, fTrackLabel, fShowerLabel, fHitLabel),
   fNeutrinoRecoEnergy(p, fTrackLabel, fShowerLabel, fHitLabel,
@@ -246,15 +249,24 @@ void ana::NeutrinoValidation::analyze(art::Event const& e)
   if (sliceHandle.isValid()) {
     std::vector<art::Ptr<recob::Slice>> slicePtrVector;
     art::fill_ptr_vector(slicePtrVector, sliceHandle);
-
-    double max_energy = 0;
-    art::Ptr<recob::Slice> most_energetic_slice;
-    for (const auto& slicePtr : slicePtrVector) {
-      double energy = GetTotalEnergy(slicePtr, e);
-      if (energy > max_energy) {
-        max_energy = energy;
-        most_energetic_slice = slicePtr;
-      }
+    // Get the most energetic slice
+    auto max_energy_slice_it = slicePtrVector.begin();
+    if (fSliceCaloEnergy) {
+      max_energy_slice_it = std::max_element(slicePtrVector.begin(), slicePtrVector.end(), [&](const auto& slicePtr1, const auto& slicePtr2) {
+        return GetSliceCaloEnergy(slicePtr1, e) < GetSliceCaloEnergy(slicePtr2, e);
+      });
+    } else {
+      max_energy_slice_it = std::max_element(slicePtrVector.begin(), slicePtrVector.end(), [&](const auto& slicePtr1, const auto& slicePtr2) {
+        return fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, slicePtr1, true).fNuLorentzVector.E() < fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, slicePtr2, true).fNuLorentzVector.E();
+      });
+    }
+    art::Ptr<recob::Slice> most_energetic_slice = *max_energy_slice_it;
+    if (fSliceCaloEnergy) {
+      std::cerr << "Slice energy Calo: " << GetSliceCaloEnergy(most_energetic_slice, e) / 1000 << std::endl;
+      fSliceEnergy = GetSliceCaloEnergy(most_energetic_slice, e) / 1000; // Convert to GeV
+    } else {
+      std::cerr << "Slice energy Neutrino: " << fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true).fNuLorentzVector.E() << std::endl;
+      fSliceEnergy = fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true).fNuLorentzVector.E();
     }
     // Check if the slice is a neutrino
     art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fPFParticleLabel);
@@ -409,7 +421,7 @@ void ana::NeutrinoValidation::analyze(art::Event const& e)
  * @param e art::Event.
  * @return double, total energy of the slice.
  */
-double ana::NeutrinoValidation::GetTotalEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e) {
+double ana::NeutrinoValidation::GetSliceCaloEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e) {
   art::ValidHandle<std::vector<recob::Slice>> sliceHandle = e.getValidHandle<std::vector<recob::Slice>>(fSliceLabel);
   art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fPFParticleLabel);
   std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(slicePtr.key());
@@ -550,10 +562,11 @@ void ana::NeutrinoValidation::beginJob() {
   fTreeReco -> Branch("No. Neutrinos", &fNoNeutrinos, "No. Neutrinos/I");
   fTreeReco -> Branch("No. PFParticles", &fNoPFParticles, "No. PFParticles/I");
   fTreeReco -> Branch("No. Daughters", &fNoDaughters, "No. Daughters/I");
+  fTreeReco -> Branch("SliceEnergy", &fSliceEnergy);
   fTreeReco -> Branch("PDG", &fRecoPDG);
   fTreeReco -> Branch("DaughterPDG", &fRecoDaughterPDG);
   fTreeReco -> Branch("Hits", &fnuHits);
-  fTreeReco -> Branch("Energy", &fRecoEnergy);
+  fTreeReco -> Branch("Energy", &fRecoEnergy); 
   fTreeReco -> Branch("VertexPositionX", &fRecoVertexPosX);
   fTreeReco -> Branch("VertexPositionY", &fRecoVertexPosY);
   fTreeReco -> Branch("VertexPositionZ", &fRecoVertexPosZ);

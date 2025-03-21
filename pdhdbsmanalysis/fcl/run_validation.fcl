@@ -14,11 +14,11 @@ source:
 services:
 {
   TFileService: { fileName: "nuValidation.root" }
-  TimeTracker:       {}
+  TimeTracker:  {}
   @table::protodunehd_simulation_services
   @table::protodunehd_reco_services
   BackTrackerService: @local::standard_backtrackerservice
-  ParticleInventoryService:       @local::standard_particleinventoryservice
+  ParticleInventoryService: @local::standard_particleinventoryservice
 }
 
 physics:
@@ -28,6 +28,6 @@ physics:
     nuValidation: @local::nuValidationConfig
   }
 
-  ana:     [ nuValidation ]
+  ana: [ nuValidation ]
   end_paths: [ ana ]
 }

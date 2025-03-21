@@ -18,7 +18,7 @@ nuValidationConfig:
     CalorimetryLabel: "pandoracalo"
     WireLabel:        "wclsdatahd"
     TALabel:          "tamakerTPC"
-    GetTruth:         true
+    SliceCaloEnergy:  false
 
     CalorimetryAlg: @local::pdhd_calorimetryalgmc
     #CalorimetryLabel:        "pandoracalo"
