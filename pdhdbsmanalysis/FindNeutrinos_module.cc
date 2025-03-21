@@ -328,7 +328,11 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
     double energy = 0;
     art::Ptr<recob::Slice> most_energetic_slice;
     for (const art::Ptr<recob::Slice>& slicePtr : slicePtrVector) {
-      energy = GetTotalEnergy(slicePtr, e);
+      // energy = GetTotalEnergy(slicePtr, e);
+      // use the slice energy
+      dune::EnergyRecoOutput this_energy_output = fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, slicePtr, true);
+      energy = this_energy_output.fNuLorentzVector.E();
+
       if (energy > max_energy) {
         max_energy = energy;
         most_energetic_slice = slicePtr;
@@ -423,9 +427,10 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
     fDirectionY_aggregate = nu_angle.fRecoDirection.y();
     fDirectionZ_aggregate = nu_angle.fRecoDirection.z();
 
-    // dune::EnergyRecoOutput energy_output = fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true);
+    dune::EnergyRecoOutput energy_output = fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true);
 
-    // fEnergy_aggregate = energy_output.fNuLorentzVector.E();
+    fEnergy_aggregate = energy_output.fNuLorentzVector.E();
+
 
     // -------------------------------------------------------------------
 
