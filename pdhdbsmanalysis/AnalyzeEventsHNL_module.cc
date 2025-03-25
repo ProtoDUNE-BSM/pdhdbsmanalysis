@@ -15,11 +15,18 @@
 #include "canvas/Utilities/InputTag.h"
 #include "fhiclcpp/ParameterSet.h"
 #include "larcoreobj/SummaryData/POTSummary.h"
+#include "lardataobj/AnalysisBase/Calorimetry.h"
+#include "lardataobj/AnalysisBase/ParticleID.h"
 
 #include "detdataformats/trigger/TriggerObjectOverlay.hpp"
 #include "detdataformats/trigger/TriggerPrimitive.hpp"
 #include "detdataformats/trigger/TriggerActivityData.hpp"
 #include "detdataformats/trigger/TriggerCandidateData.hpp"
+
+#include <cmath>
+#include <map>
+#include <iostream>
+#include <unordered_map>
 
 
 // #include "messagefacility/MessageLogger/MessageLogger.h"
@@ -80,6 +87,7 @@ public:
   std::vector<double> GetDaugtherInfoDFS(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e);
   std::vector<TruthMatchUtils::G4ID> GetTrueInfoChainDFS(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e);
   TruthMatchUtils::G4ID GetTrueInfo(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e);
+  double GetMassFromPDG(int pdgCode);
 
 
   // Required functions.
@@ -95,6 +103,7 @@ private:
   // Create output TTree
   TTree *fTree_reco;
   TTree *fTree_truth;
+  // TTree* fTree_check;
   
   // Tree variables reco
   unsigned int fEventID_reco;
@@ -110,9 +119,17 @@ private:
   int fNPFPs_reco;
   int fTrueOriginID_reco;
   int fEventNumber_reco;
+  double fRecoPx;
+  double fRecoPy;
+  double fRecoPz;
+  double fRecoP;
+
   
   // Tree variables true
   unsigned int fEventID_true;
+  double fVx_prod_true;
+  double fVy_prod_true;
+  double fVz_prod_true;
   double fVx_true;
   double fVy_true;
   double fVz_true;
@@ -127,6 +144,13 @@ private:
   double fTotalPOT_true;
   int fTA_true;
   int fEventNumber_true;
+  double fKineticEnergy_true;
+  double fP_true;
+  double fDirCosX_true;
+  double fDirCosY_true;
+  double fDirCosZ_true;
+
+  // double fCheckEnergy;
 
 
 
@@ -145,6 +169,12 @@ private:
   std::string fOutputFileName;
   bool fGetTruth;
 
+  std::vector<int> fDaughterPdgCode_reco;
+  std::vector<double> fDaughterPx_reco, fDaughterPy_reco, fDaughterPz_reco, fDaughterEnergy_reco;
+  std::vector<std::vector<float>> fChildTrackdEdx_reco;
+  std::vector<std::vector<float>> fChildTrackResRange_reco;
+
+
   int fTA;
   
 
@@ -155,6 +185,8 @@ private:
   double fGoodPOT = 0;
   //
   int fEventNumber = 0;
+  // double GetMassFromPDG(int pdgCode);  // Function prototype
+  // double ComputeMomentumRelativistic(double kineticEnergy, double mass); // Function prototype
 
 };
 
@@ -183,20 +215,28 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
 {
   // Implementation of required member function here.
   fEventID_reco = 0;
-  fVx_reco = 0;
-  fVy_reco = 0;
-  fVz_reco = 0;
+  fVx_reco = -9999;
+  fVy_reco = -9999;
+  fVz_reco = -9999;
   fPdgCode_reco = 0;
   fEnergy_reco = 0;
-  fDirectionX_reco = 0;
-  fDirectionY_reco = 0;
-  fDirectionZ_reco = 0;
   fNHits_reco = 0;
   fNPFPs_reco = 0;
   fTrueOriginID_reco = 0;
   fEventNumber_reco = 0;  
+  fEnergy_reco = 0.0;
+  fRecoPx = -9999;
+  fRecoPy = -9999;
+  fRecoPz = -9999;
+  fRecoP = -9999;
+  fDirectionX_reco = -9999;
+  fDirectionY_reco = -9999;
+  fDirectionZ_reco = -9999;
 
   fEventID_true = 0;
+  fVx_prod_true = 0;
+  fVy_prod_true = 0;
+  fVz_prod_true = 0;
   fVx_true = 0;
   fVy_true = 0;
   fVz_true = 0;
@@ -206,14 +246,18 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
   fPz_true = 0;
   fPdgCode_true = 0;
   fMother_true = 0;
+  fKineticEnergy_true = 0;
+  fP_true = 0;
+  fDirCosX_true = 0;
+  fDirCosY_true = 0;
+  fDirCosZ_true = 0;
 
 
-  // get the trigger information
+  // fCheckEnergy=0;
   art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
   if (!taHandle.isValid()) {
     fTA = -1;
   } 
-
  if (!e.getByLabel(fTALabel, taHandle)) {
     fTA = 0;
   } else {
@@ -223,109 +267,193 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
       fTA = 1;
     }
   } 
-  // double fE = 0;
 
-  // If extracting truth info is enabled
   if (fGetTruth) {
     auto truthHandle = e.getValidHandle<std::vector<simb::MCTruth>>(fMCTruthLabel);
     for (auto const& truth : (*truthHandle)) {
+      TLorentzVector tempVector;
+      TLorentzVector totalVector;
+      tempVector.SetXYZM(0, 0, 0, 0);
+      totalVector.SetXYZM(0, 0, 0, 0);
       for (int i = 0; i < truth.NParticles(); i++) {
+        std::cout << "Number of particles: " << truth.NParticles() << std::endl;
+        std::cout << "Particle " << i << std::endl;
         const auto& particle = truth.GetParticle(i);
         fE_true = particle.E();
         fEventID_true = e.id().event();
-        fVx_true = particle.Vx();
-        fVy_true = particle.Vy();
-        fVz_true = particle.Vz();
+
+        // Production vertex (where HNL is created) : Mother = -1 (HNL is not identified?)
+        // fVx_prod_true = particle.Vx();
+        // fVy_prod_true = particle.Vy();
+        // fVz_prod_true = particle.Vz();
+        // decay vertex (where HNL decays)
+        fVx_true = particle.EndX();
+        fVy_true = particle.EndY();
+        fVz_true = particle.EndZ();
         fE_true = particle.E();
         fPx_true = particle.Px();
         fPy_true = particle.Py();
         fPz_true = particle.Pz();
         fPdgCode_true = particle.PdgCode();
         fMother_true = particle.Mother();
-        
+        // Kinetic Energy = E - mass
+        double mass = particle.Mass();
+        fKineticEnergy_true = fE_true - mass;
+
+        fP_true = particle.P();
+        fDirCosX_true = fPx_true / fP_true;
+        fDirCosY_true = fPy_true / fP_true;
+        fDirCosZ_true = fPz_true / fP_true;
+
         fTree_truth->Fill();
-      }
-    }
-  }
+        tempVector.SetXYZM(particle.Px(), particle.Py(), particle.Pz(), particle.Mass());
+        totalVector += tempVector;
 
-  
+        // std::cout << "Event number: " << fEventID_true << std::endl;
+        // std::cout << "True vertex position: (" << fVx_true << ", " << fVy_true << ", " << fVz_true << ")" << std::endl;
+        // std::cout << "True origin ID: " << fTrueOriginID_reco << std::endl;
+        // std::cout << "True PDG code: " << fPdgCode_true << std::endl;
+        // std::cout << "True energy: " << fE_true << std::endl;
+        // std::cout << "True momentum: (" << fPx_true << ", " << fPy_true << ", " << fPz_true << ")" << std::endl;
+        // std::cout << "True mother: " << fMother_true << std::endl;
+        // std::cout << "Kinetic Energy: " << fKineticEnergy_true << " for pdg code: " << fPdgCode_true << " and mass: " << mass << "and Energy: " << fE_true << std::endl;
+
+      }// end of loop over mc particles
+    }// loop of truthHandle
+  }// end of if fGetTruth
 
 
-  // -------------------------------------------------------------------
+
   art::Handle<std::vector<recob::Slice>> sliceHandle = e.getHandle<std::vector<recob::Slice>>(fSliceLabel);
-  if (sliceHandle.isValid()) {
-      std::vector<art::Ptr<recob::Slice>> slicePtrVector;
-      art::fill_ptr_vector(slicePtrVector, sliceHandle);
 
-      // Loop over ALL slices, not just the most energetic one
-      for (const art::Ptr<recob::Slice>& slicePtr : slicePtrVector) {
-          
-          // Get all PFParticles in this slice
-          art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fSliceLabel);
-          std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(slicePtr.key());
+  if (sliceHandle.isValid()){
+    std::vector<art::Ptr<recob::Slice>> slicePtrVector;
+    art::fill_ptr_vector(slicePtrVector, sliceHandle);
+    std::cout << "Number of Slices: " << slicePtrVector.size() << std::endl;
 
-          // Get PFParticle handle
-          art::Handle<std::vector<recob::PFParticle>> pfparticleHandle = e.getHandle<std::vector<recob::PFParticle>>(fPFParticleLabel);
-
-          // Loop over ALL PFParticles in this slice
-          for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
-              
-              // Get vertex information (check association validity first)
-              art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
-              double vertex_x = -999, vertex_y = -999, vertex_z = -999;
-              if (pfVertexAssoc.isValid() && pfVertexAssoc.size() > pfparticlePtr.key()) {
-                  std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
-                  if (!vertices.empty()) {
-                      vertex_x = vertices[0]->position().X();
-                      vertex_y = vertices[0]->position().Y();
-                      vertex_z = vertices[0]->position().Z();
-                  }
-              }
-
-              // Store reconstructed data
-              fVx_reco = vertex_x;
-              fVy_reco = vertex_y;
-              fVz_reco = vertex_z;
-              fPdgCode_reco = pfparticlePtr->PdgCode();
-              fEnergy_reco = GetTotalEnergy(slicePtr, e);
-              fEventID_reco = e.id().event();
-              
-              fTree_reco->Fill();
-
-          }
-      }
-  }
-}
-double hnlAna::AnalyzeEventsHNL::GetTotalEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e){
-
-  art::ValidHandle<std::vector<recob::Slice>> sliceHandle = e.getValidHandle<std::vector<recob::Slice>>(fSliceLabel);
-  art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fSliceLabel);
-  std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(slicePtr.key());
+    // check if the slice is HNL
+    art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fSliceLabel);
+    // std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(slicePtrVector.at(0).key());
 
 
-  double total_energy = 0;
+    for (const auto& slicePtr : slicePtrVector) {
+      std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(slicePtr.key());
+      art::Handle<std::vector<recob::PFParticle>> pfparticleHandle = e.getHandle<std::vector<recob::PFParticle>>(fPFParticleLabel);
+      for (const auto& pfparticlePtr : pfparticlePtrVector) {
 
-  for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
-    if (dune_ana::DUNEAnaPFParticleUtils::IsTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel)) {
-      // get the track
-      art::Ptr<recob::Track> this_track =  dune_ana::DUNEAnaPFParticleUtils::GetTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel);
-      art::Ptr<anab::Calorimetry> this_calo = dune_ana::DUNEAnaTrackUtils::GetCalorimetry(this_track, e, fTrackLabel, fCalorimetryLabel);
-      total_energy += this_calo->KineticEnergy();
+        art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
+        std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
+      
+        std::vector<double> info = GetDaugtherInfoDFS(pfparticlePtr, e);
+      
+        int trueOriginID = -999;
+        if (fGetTruth){
+          trueOriginID = GetTrueInfo(pfparticlePtr, e);
+        }
+      
+        double vertex_x, vertex_y, vertex_z;
 
-    }
-    else if (dune_ana::DUNEAnaPFParticleUtils::IsShower(pfparticlePtr, e, fPFParticleLabel, fShowerLabel)) {
-      // get the shower
-      art::Ptr<recob::Shower> this_shower =  dune_ana::DUNEAnaPFParticleUtils::GetShower(pfparticlePtr, e, fPFParticleLabel, fShowerLabel);
-      // do not use the utility, use the association
-      art::Handle<std::vector<recob::Shower>> showerHandle = e.getHandle<std::vector<recob::Shower>>(fShowerLabel);
-      art::FindManyP<anab::Calorimetry> showerCaloAssoc(showerHandle, e, "pandoraShowercalonosce");
-      std::vector<art::Ptr<anab::Calorimetry>> calos = showerCaloAssoc.at(this_shower.key());
-      total_energy += calos.at(0)->KineticEnergy();
-    }
-  }
+        if (vertices.empty()) {
+          std::cout << "No vertex found for PFP with PDG: " << pfparticlePtr->PdgCode() << std::endl;
+        }
+        
+        if (vertices.size() > 0) {
+          vertex_x = vertices.at(0)->position().X();
+          vertex_y = vertices.at(0)->position().Y();
+          vertex_z = vertices.at(0)->position().Z();
+        }
+        else {
+          vertex_x = -999;
+          vertex_y = -999;
+          vertex_z = -999;
+        }
+      
+        int pdg = pfparticlePtr->PdgCode();
+      
+      
+      
+      
+        // Fill the variables
+        fEventID_reco = pfparticlePtr->Self();
+        fVx_reco = vertex_x;
+        fVy_reco = vertex_y;
+        fVz_reco = vertex_z;
+        fPdgCode_reco = pdg;
+        fNHits_reco = info.at(0);
+        fNPFPs_reco = info.at(1);
+        fEnergy_reco = info.at(2);
+        fDirectionX_reco = info.at(3);
+        fDirectionY_reco = info.at(4);
+        fDirectionZ_reco = info.at(5);
+        fTrueOriginID_reco = trueOriginID;
+        fEventNumber_reco = e.id().event();
+        fRecoP = info.at(6);
+        fRecoPx = info.at(7);
+        fRecoPy = info.at(8);
+        fRecoPz = info.at(9);
+        
+      
+        // std::cout << "Reconstructed event number: " << fEventNumber_reco << std::endl;
+        // std::cout << "Reconstructed vertex position: (" << fVx_reco << ", " << fVy_reco << ", " << fVz_reco << ")" << std::endl;
+        // std::cout << "Reconstructed origin ID: " << fTrueOriginID_reco << std::endl;
+        // std::cout << "Reconstructed PDG code: " << fPdgCode_reco << std::endl;
+        // std::cout << "Reconstructed energy: " << fEnergy_reco << std::endl;
+        // std::cout << "Reconstructed momentum: (" << fRecoPx << ", " << fRecoPy << ", " << fRecoPz << ")" << std::endl;
+        // std::cout << "Reconstructed direction: (" << fDirectionX_reco << ", " << fDirectionY_reco << ", " << fDirectionZ_reco << ")" << std::endl;
+        // std::cout << "Reconstructed number of hits: " << fNHits_reco << std::endl;
+        // std::cout << "Reconstructed number of pfparticles: " << fNPFPs_reco << std::endl;
+      
+        
+        fTree_reco->Fill();
 
-  return total_energy;
-}
+      } // end of loop over pfparticles
+    }// end of loop over slices
+
+  }//end of if sliceHandle is valid
+  else {
+    std::cout << "Slice handle is not valid" << std::endl;
+  }// end of else valid slice
+
+
+
+  std::cout << "End of event" << std::endl;
+}// end of analyze function
+
+
+
+
+
+
+//------------------to get total energy for the most energetic slice: not to be used for HNL.-------------------------
+// double hnlAna::AnalyzeEventsHNL::GetTotalEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e) {
+//   // Get the total energy of the slice
+//   art::ValidHandle<std::vector<recob::Slice>> sliceHandle = e.getValidHandle<std::vector<recob::Slice>>(fSliceLabel);
+//   art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fSliceLabel);
+//   std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(slicePtr.key());
+//   double total_energy = 0;
+//   for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
+//     if (dune_ana::DUNEAnaPFParticleUtils::IsTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel)) {
+//       // get the track
+//       art::Ptr<recob::Track> this_track =  dune_ana::DUNEAnaPFParticleUtils::GetTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel);
+//       art::Ptr<anab::Calorimetry> this_calo = dune_ana::DUNEAnaTrackUtils::GetCalorimetry(this_track, e, fTrackLabel, fCalorimetryLabel);
+//       total_energy += this_calo->KineticEnergy();
+//     }
+//     else if (dune_ana::DUNEAnaPFParticleUtils::IsShower(pfparticlePtr, e, fPFParticleLabel, fShowerLabel)) {
+//       // get the shower
+//       art::Ptr<recob::Shower> this_shower =  dune_ana::DUNEAnaPFParticleUtils::GetShower(pfparticlePtr, e, fPFParticleLabel, fShowerLabel);
+//       // do not use the utility, use the association
+//       art::Handle<std::vector<recob::Shower>> showerHandle = e.getHandle<std::vector<recob::Shower>>(fShowerLabel);
+//       art::FindManyP<anab::Calorimetry> showerCaloAssoc(showerHandle, e, "pandoraShowercalonosce");
+//       std::vector<art::Ptr<anab::Calorimetry>> calos = showerCaloAssoc.at(this_shower.key());
+//       total_energy += calos.at(0)->KineticEnergy();
+//     }
+//   }
+//   return total_energy;
+//   std::cout << "Recob Total Energy: " << total_energy << std::endl;
+// }
+//-----------------------------------------------------------------------------------------------------------------
+
+// Truth Reco Match
 
 int hnlAna::AnalyzeEventsHNL::GetTrueInfo(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e) {
   TruthMatchUtils::G4ID trueID = 0;
@@ -338,11 +466,14 @@ int hnlAna::AnalyzeEventsHNL::GetTrueInfo(const art::Ptr<recob::PFParticle>& pfp
   for (TruthMatchUtils::G4ID trueOriginID : trueOriginIDs_vector) {
     if (trueOriginID == 1) {
       trueID++;
+      // std::cout << "True ID: " << trueID << std::endl;
     }
   }
   
   return trueID;
 }
+
+
 
 std::vector<TruthMatchUtils::G4ID> hnlAna::AnalyzeEventsHNL::GetTrueInfoChainDFS(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e) {
   std::vector<TruthMatchUtils::G4ID> trueIDs_vector;
@@ -357,7 +488,6 @@ std::vector<TruthMatchUtils::G4ID> hnlAna::AnalyzeEventsHNL::GetTrueInfoChainDFS
     const auto clockData = art::ServiceHandle<detinfo::DetectorClocksService>()->DataFor(e);
     TruthMatchUtils::G4ID hitID(TruthMatchUtils::TrueParticleIDFromTotalRecoHits(clockData, hits, fRollUpUnsavedIDs));
 
-
     art::ServiceHandle<cheat::ParticleInventoryService> pi_serv;
     const simb::MCParticle* mcparticle = pi_serv->TrackIdToParticle_P(hitID);
     // check if the pointer is valid
@@ -365,11 +495,11 @@ std::vector<TruthMatchUtils::G4ID> hnlAna::AnalyzeEventsHNL::GetTrueInfoChainDFS
       trueIDs_vector.push_back(0);
       
     } else{
+
       int trackID = mcparticle->TrackId();
       simb::MCTruth mcTruth = pi_serv->TrackIdToMCTruth(trackID);
       trueIDs_vector.push_back(mcTruth.Origin());  
     }
-
   }
   else {
     for (const art::Ptr<recob::PFParticle>& daughter : daughters) {
@@ -380,82 +510,139 @@ std::vector<TruthMatchUtils::G4ID> hnlAna::AnalyzeEventsHNL::GetTrueInfoChainDFS
   return trueIDs_vector;
 }
 
+
+
+
+
+
 std::vector<double> hnlAna::AnalyzeEventsHNL::GetDaugtherInfoDFS(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e) {
   // i want the total number of hits, the total number of pfp, the total energy
   std::vector<double> info;
   info.push_back(0); // Number of hits
   info.push_back(0); // Number of pfparticles
-  info.push_back(0); // Energy
+  info.push_back(0); // Kinetic energy
   info.push_back(0); // Direction X
   info.push_back(0); // Direction Y
   info.push_back(0); // Direction Z
+  info.push_back(0); // Momentum
+  info.push_back(0); // Momentum X
+  info.push_back(0); // Momentum Y
+  info.push_back(0); // Momentum Z
 
 
 
-  // get the daughter pfparticles
-  std::vector<art::Ptr<recob::PFParticle>> daughters = dune_ana::DUNEAnaPFParticleUtils::GetChildParticles(pfparticlePtr, e, fPFParticleLabel);
 
-  if (daughters.size() == 0) {
-    // get the hits
-    art::Handle<std::vector<recob::PFParticle>> pfparticleHandle = e.getHandle<std::vector<recob::PFParticle>>(fPFParticleLabel);
-    std::vector<art::Ptr<recob::Hit>> hits = dune_ana::DUNEAnaPFParticleUtils::GetHits(pfparticlePtr, e, fPFParticleLabel);
-    info[0] = hits.size();
+// get the daughter pfparticles
+std::vector<art::Ptr<recob::PFParticle>> daughters = dune_ana::DUNEAnaPFParticleUtils::GetChildParticles(pfparticlePtr, e, fPFParticleLabel);
 
-    // get the number of pfparticles
-    info[1] = 1;
+if (daughters.size() == 0) {
+  // get the hits
+  art::Handle<std::vector<recob::PFParticle>> pfparticleHandle = e.getHandle<std::vector<recob::PFParticle>>(fPFParticleLabel);
+  std::vector<art::Ptr<recob::Hit>> hits = dune_ana::DUNEAnaPFParticleUtils::GetHits(pfparticlePtr, e, fPFParticleLabel);
+  info[0] = hits.size();
 
+  // get the number of pfparticles
+  info[1] = 1;
+
+  double kinetic_energy = 0;
+  double momentum = 0.0; 
+
+  
+  // get the energy
+  if (dune_ana::DUNEAnaPFParticleUtils::IsTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel)) {
+    // get the track ------------------------------------------------------------------------------------
+    art::Ptr<recob::Track> this_track =  dune_ana::DUNEAnaPFParticleUtils::GetTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel);
+    art::Ptr<anab::Calorimetry> this_calo = dune_ana::DUNEAnaTrackUtils::GetCalorimetry(this_track, e, fTrackLabel, fCalorimetryLabel);
+    kinetic_energy = this_calo->KineticEnergy();
     
-    // get the energy
-    if (dune_ana::DUNEAnaPFParticleUtils::IsTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel)) {
-      // get the track
-      art::Ptr<recob::Track> this_track =  dune_ana::DUNEAnaPFParticleUtils::GetTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel);
-      art::Ptr<anab::Calorimetry> this_calo = dune_ana::DUNEAnaTrackUtils::GetCalorimetry(this_track, e, fTrackLabel, fCalorimetryLabel);
-      info[2] = this_calo->KineticEnergy();
+    
+    // get the direction
+    info[3] = this_track->VertexDirection().X();
+    info[4] = this_track->VertexDirection().Y();
+    info[5] = this_track->VertexDirection().Z();
+  }
+  else if (dune_ana::DUNEAnaPFParticleUtils::IsShower(pfparticlePtr, e, fPFParticleLabel, fShowerLabel)) {
+    // get the shower------------------------------------------------------------------------------------------------
+    art::Ptr<recob::Shower> this_shower =  dune_ana::DUNEAnaPFParticleUtils::GetShower(pfparticlePtr, e, fPFParticleLabel, fShowerLabel);
+    // do not use the utility, use the association
+    art::Handle<std::vector<recob::Shower>> showerHandle = e.getHandle<std::vector<recob::Shower>>(fShowerLabel);
+    art::FindManyP<anab::Calorimetry> showerCaloAssoc(showerHandle, e, "pandoraShowercalonosce");
+    std::vector<art::Ptr<anab::Calorimetry>> calos = showerCaloAssoc.at(this_shower.key());
+    kinetic_energy = calos.at(0)->KineticEnergy();
 
-      // get the direction
-      info[3] = this_track->VertexDirection().X();
-      info[4] = this_track->VertexDirection().Y();
-      info[5] = this_track->VertexDirection().Z();
 
-    }
-    else if (dune_ana::DUNEAnaPFParticleUtils::IsShower(pfparticlePtr, e, fPFParticleLabel, fShowerLabel)) {
-      // get the shower
-      art::Ptr<recob::Shower> this_shower =  dune_ana::DUNEAnaPFParticleUtils::GetShower(pfparticlePtr, e, fPFParticleLabel, fShowerLabel);
-      // do not use the utility, use the association
-      art::Handle<std::vector<recob::Shower>> showerHandle = e.getHandle<std::vector<recob::Shower>>(fShowerLabel);
-      art::FindManyP<anab::Calorimetry> showerCaloAssoc(showerHandle, e, "pandoraShowercalonosce");
-      std::vector<art::Ptr<anab::Calorimetry>> calos = showerCaloAssoc.at(this_shower.key());
-      info[2] = calos.at(0)->KineticEnergy();
-      
-      // get the direction
-      info[3] = this_shower->Direction().X();
-      info[4] = this_shower->Direction().Y();
-      info[5] = this_shower->Direction().Z();
-    }
-
+    // get the direction
+    info[3] = this_shower->Direction().X();
+    info[4] = this_shower->Direction().Y();
+    info[5] = this_shower->Direction().Z();
   }
   else {
-    for (const art::Ptr<recob::PFParticle>& daughter : daughters) {
-      std::vector<double> daughter_info = GetDaugtherInfoDFS(daughter, e);
-      info[0] += daughter_info[0];
-      info[1] += daughter_info[1];
-      info[2] += daughter_info[2];
-      info[3] += daughter_info[3];  
-      info[4] += daughter_info[4];
-      info[5] += daughter_info[5];
-    }
+    std::cout << "Warning: PFParticle is neither a track nor a shower" << std::endl;
+    info[3] = -999;
+    info[4] = -999;
+    info[5] = -999;
   }
-  return info;
+
+  // get the momentum-------
+  double mass = GetMassFromPDG(pfparticlePtr->PdgCode());
+  if (mass > 0) {
+    momentum = sqrt(kinetic_energy * (kinetic_energy + 2 * mass));
+  } else {
+    momentum = -999; // Set momentum to -999 if mass is zero
+    std::cout << "Warning: Mass is zero for PDG code " << pfparticlePtr->PdgCode() << std::endl;
+  }
+
+  info[2] = kinetic_energy; // Store kinetic energy
+  info[6] = momentum;       // Store computed momentum
+  info[7] = momentum * info[3]; // Store momentum in x direction
+  info[8] = momentum * info[4]; // Store momentum in y direction
+  info[9] = momentum * info[5]; // Store momentum in z direction
+}
+else { // if there are daughters------------------------------------------------------------------------
+  for (const art::Ptr<recob::PFParticle>& daughter : daughters) {
+    std::vector<double> daughter_info = GetDaugtherInfoDFS(daughter, e);
+    info[0] += daughter_info[0];
+    info[1] += daughter_info[1];
+    info[2] += daughter_info[2];
+    info[3] += daughter_info[3];  
+    info[4] += daughter_info[4];
+    info[5] += daughter_info[5];
+    info[6] += daughter_info[6];
+    info[7] += daughter_info[7];
+    info[8] += daughter_info[8];
+    info[9] += daughter_info[9];
+  }
 }
 
+return info;
+
+}
+
+double hnlAna::AnalyzeEventsHNL::GetMassFromPDG(int pdgCode) {
+  // Define the mass of the particles based on their PDG code
+  switch (pdgCode) {
+    case 11: return 0.000511; // Electron
+    case 13: return 0.105658; // Muon
+    case 211: return 0.139570; // Pion
+    case 321: return 0.493677; // Kaon
+    case 2212: return 0.938272; // Proton
+    default: return -1; // Unknown PDG code
+  }
+}
+
+
+
+
 void hnlAna::AnalyzeEventsHNL::beginSubRun(art::SubRun const& subRun) {
+
+    if (fGetTruth){
   
     const auto potSummaryHandle = subRun.getValidHandle<sumdata::POTSummary>("generator");
     const auto &potSummary = *potSummaryHandle;
     fPOT = potSummary.totpot;
     fGoodPOT = potSummary.totgoodpot;
     fTotalPOT += fPOT;
-
+    }
 }
 
 void hnlAna::AnalyzeEventsHNL::beginJob()
@@ -463,6 +650,11 @@ void hnlAna::AnalyzeEventsHNL::beginJob()
   art::ServiceHandle<art::TFileService> tfs;
   fTree_reco = tfs->make<TTree>("tree_reco", "Output TTree reco");
   fTree_truth = tfs->make<TTree>("tree_truth", "Output TTree truth");
+  // fTree_check = tfs->make<TTree>("tree_check", "Output TTree check");
+
+  // Create branches for check tree
+  // fTree_check->Branch("fCheck", &fCheckEnergy);
+
 
   // Add branches to TTree
   fTree_reco->Branch("eventID", &fEventID_reco);
@@ -470,15 +662,28 @@ void hnlAna::AnalyzeEventsHNL::beginJob()
   fTree_reco->Branch("vy", &fVy_reco);
   fTree_reco->Branch("vz", &fVz_reco);
   fTree_reco->Branch("pdgCode", &fPdgCode_reco);
-  fTree_reco->Branch("energy", &fEnergy_reco);
-  fTree_reco->Branch("directionX", &fDirectionX_reco);
-  fTree_reco->Branch("directionY", &fDirectionY_reco);
-  fTree_reco->Branch("directionZ", &fDirectionZ_reco);
   fTree_reco->Branch("nHits", &fNHits_reco);
   fTree_reco->Branch("nPFPs", &fNPFPs_reco);
   fTree_reco->Branch("trueOriginID", &fTrueOriginID_reco);
+  fTree_reco->Branch("eventNumber", &fEventNumber_reco);
+  fTree_reco->Branch("Energy_reco", &fEnergy_reco);
+  fTree_reco->Branch("RecoPx", &fRecoPx);
+  fTree_reco->Branch("RecoPy", &fRecoPy);
+  fTree_reco->Branch("RecoPz", &fRecoPz);
+  fTree_reco->Branch("RecoP", &fRecoP);
+  fTree_reco->Branch("DirectionX_reco", &fDirectionX_reco);
+  fTree_reco->Branch("DirectionY_reco", &fDirectionY_reco);
+  fTree_reco->Branch("DirectionZ_reco", &fDirectionZ_reco);
+  // fTree_reco->Branch("childTrackdEdx", &fChildTrackdEdx_reco);
+  // fTree_reco->Branch("childTrackResRange", &fChildTrackResRange_reco);
+  // fTree_reco->Branch("ChildTrackResRange", "std::vector<std::vector<float>>", &fChildTrackResRange_reco);
+  // fTree_reco->Branch("ChildTrackdEdx", "std::vector<std::vector<float>>", &fChildTrackdEdx_reco);
+
 
   fTree_truth->Branch("eventID", &fEventID_true);
+  fTree_truth->Branch("vx_prod", &fVx_prod_true);
+  fTree_truth->Branch("vy_prod", &fVy_prod_true);
+  fTree_truth->Branch("vz_prod", &fVz_prod_true);
   fTree_truth->Branch("vx", &fVx_true);
   fTree_truth->Branch("vy", &fVy_true);
   fTree_truth->Branch("vz", &fVz_true);
@@ -488,6 +693,12 @@ void hnlAna::AnalyzeEventsHNL::beginJob()
   fTree_truth->Branch("Pz", &fPz_true);
   fTree_truth->Branch("pdgCode", &fPdgCode_true);
   fTree_truth->Branch("mother", &fMother_true);
+  fTree_truth->Branch("Kinetic_Energy", &fKineticEnergy_true);
+  fTree_truth->Branch("Momentum", &fP_true);
+  fTree_truth->Branch("DirCosX", &fDirCosX_true);
+  fTree_truth->Branch("DirCosY", &fDirCosY_true);
+  fTree_truth->Branch("DirCosZ", &fDirCosZ_true);
+
 }
 
 void hnlAna::AnalyzeEventsHNL::endJob()
