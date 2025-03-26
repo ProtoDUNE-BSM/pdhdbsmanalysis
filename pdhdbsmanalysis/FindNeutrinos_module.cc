@@ -377,6 +377,7 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
             fPassCut = 1;
           }
         }
+        fTrueOriginID_aggregate = trueOriginID;
         // fill the variables
         fVx_aggregate = vertex_x;
         fVy_aggregate = vertex_y;
@@ -387,9 +388,6 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
 
       // -------------------------------------------------------------------
       // can be improved
-      if (trueOriginID == 12 or trueOriginID == 14 or trueOriginID == 16 or trueOriginID == -12 or trueOriginID == -14 or trueOriginID == -16) {
-        fTrueOriginID_aggregate = trueOriginID;
-      }
 
       fEnergy_aggregate += info[2];
       fDirectionX_aggregate += info[3];
@@ -497,6 +495,7 @@ double NeutrinoAna::FindNeutrinos::GetTotalEnergy(const art::Ptr<recob::Slice>& 
 }
 
 int NeutrinoAna::FindNeutrinos::GetTrueInfo(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e) {
+  // needs to be rethinked. What's the point of having the total number of elements with the same origin?
   TruthMatchUtils::G4ID trueID = 0;
   std::vector<TruthMatchUtils::G4ID> trueOriginIDs_vector;
   // get the daughter pfparticles
