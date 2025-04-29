@@ -86,8 +86,6 @@ public:
     std::vector<double>& ShowerDirectionX, std::vector<double>& ShowerDirectionY, std::vector<double>& ShowerDirectionZ, 
     std::vector<double>& KineticEnergyTrack, std::vector<double>& ShowerEnergy, std::vector<int>& DaughterPDG
   );
-  std::vector<double> GetChargedPrimaryInfo(const art::Ptr<recob::PFParticle>& pfParticlePtr, art::Event const& e);
-  // std::vector<double> GetNeutralPrimaryInfo(const art::Ptr<recob::PFParticle>& pfParticlePtr, art::Event const& e);
 
   // Required functions.
   void analyze(art::Event const& e) override;
@@ -262,10 +260,10 @@ void ana::NeutrinoValidation::analyze(art::Event const& e)
     }
     art::Ptr<recob::Slice> most_energetic_slice = *max_energy_slice_it;
     if (fSliceCaloEnergy) {
-      std::cerr << "Slice energy Calo: " << GetSliceCaloEnergy(most_energetic_slice, e) / 1000 << std::endl;
+      // std::cerr << "Slice energy Calo: " << GetSliceCaloEnergy(most_energetic_slice, e) / 1000 << std::endl;
       fSliceEnergy = GetSliceCaloEnergy(most_energetic_slice, e) / 1000; // Convert to GeV
     } else {
-      std::cerr << "Slice energy Neutrino: " << fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true).fNuLorentzVector.E() << std::endl;
+      // std::cerr << "Slice energy Neutrino: " << fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true).fNuLorentzVector.E() << std::endl;
       fSliceEnergy = fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true).fNuLorentzVector.E();
     }
     // Check if the slice is a neutrino
@@ -421,7 +419,8 @@ void ana::NeutrinoValidation::analyze(art::Event const& e)
  * @param e art::Event.
  * @return double, total energy of the slice.
  */
-double ana::NeutrinoValidation::GetSliceCaloEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e) {
+double ana::NeutrinoValidation::GetSliceCaloEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e)
+{
   art::ValidHandle<std::vector<recob::Slice>> sliceHandle = e.getValidHandle<std::vector<recob::Slice>>(fSliceLabel);
   art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fPFParticleLabel);
   std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(slicePtr.key());
@@ -517,7 +516,8 @@ unsigned int ana::NeutrinoValidation::GetNuDaughterInfo(
  * The beginJob function initializes the output TTree for the true neutrino information, 
  * the POT information and the reconstructed neutrino information.
  */
-void ana::NeutrinoValidation::beginJob() {
+void ana::NeutrinoValidation::beginJob()
+{
   // Make our handle to the TFileService
   art::ServiceHandle<art::TFileService> tfs;
 
@@ -597,7 +597,8 @@ void ana::NeutrinoValidation::beginJob() {
  * The beginSubRun function is called at the beginning of each subrun.
  * The function gets the POT information from the POTSummary and fills the fTreePOT tree.
  */
-void ana::NeutrinoValidation::beginSubRun(art::SubRun const& subRun) {
+void ana::NeutrinoValidation::beginSubRun(art::SubRun const& subRun)
+{
   const auto potSummaryHandle = subRun.getValidHandle<sumdata::POTSummary>("generator");
   const auto &potSummary = *potSummaryHandle;
   // Get the POT information
