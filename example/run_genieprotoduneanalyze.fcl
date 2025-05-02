@@ -37,7 +37,7 @@ physics:
   end_paths: [ path1 ]
 }
 
-physics.analyzers.ana.decay: 2
+physics.analyzers.ana.decay: 4
 physics.filters.vertexfilter.InputTagTP : "tpmakerTPC"
 physics.filters.vertexfilter.InputTagTA : "tamakerTPC"
 

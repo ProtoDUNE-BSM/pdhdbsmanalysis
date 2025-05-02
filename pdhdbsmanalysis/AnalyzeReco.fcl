@@ -1,0 +1,9 @@
+BEGIN_PROLOG
+
+analyzereco: {
+  module_type: "AnalyzeReco"
+  PoT_threshold: 1e12
+  sps_beamdata: "./srcs/pdhdbsmdata/sps_data/spillrun029424.csv"
+}
+
+END_PROLOG

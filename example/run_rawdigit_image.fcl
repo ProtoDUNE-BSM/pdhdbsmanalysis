@@ -1,0 +1,33 @@
+#include "services_refactored_pdune.fcl"
+process_name: RawDigitImage
+
+services:
+{
+  TFileService:           { fileName: "%ifb_image_rawdigit.root" }
+  MemoryTracker:          {}
+  TimeTracker:            {}
+  RandomNumberGenerator:  {}
+  @table::protodunehd_refactored_simulation_services
+  WireReadout:            @local::dune_wire_readout
+  Geometry:               @local::protodunehdv6_geo
+}
+
+source:{
+  module_type: RootInput
+  maxEvents:  -1      # Number of events to create
+}
+
+physics:{
+  
+  analyzers:{
+    rawdigit: {
+      module_label: pdhdrawdataimage
+      module_type:  PDHDRawDataImage
+      RawLabel:  "tpcrawdecoder:daq" 
+      TALabel:  "tamakerTPC" 
+    }
+  }
+
+  ana:  [ rawdigit ]
+  end_paths:     [ana]  
+}

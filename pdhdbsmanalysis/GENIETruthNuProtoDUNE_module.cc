@@ -94,12 +94,17 @@ private:
                                           ///< simulated particles through the detector
   
   TH1D *hMCNeutrinoEnergy;
+  TH1D *hMCNumuEnergy;
+  TH1D *hMCNueEnergy;
+  TH1D *hMCNumubarEnergy;
+  TH1D *hMCNuebarEnergy;
 
   double fSetPOT;
 
   int fSimPDG;     ///< PDG ID of the particle being processed
   int fSimTrackID; ///< GEANT ID of the particle being processed
   int fCCNC; ///< Is neutrino interaction a CC or NC interaction
+  int fTarget;
   unsigned int fTPCID; ///< TPC ID where neutrino interacts
 
   double fE;
@@ -149,12 +154,19 @@ ana::GENIETruthNuProtoDUNE::GENIETruthNuProtoDUNE(fhicl::ParameterSet const& p)
   fGeometryService = lar::providerFrom<geo::Geometry>();
   // TPC 1 is the first proper TPC - TPC 0 is for track stubs
   const geo::TPCGeo& tpc = fGeometryService->Cryostat().TPC(1);
+  //fFiducialBoundaries.push_back(0.); // central x
+  //fFiducialBoundaries.push_back(tpc.Width() - 0.05*tpc.Width()); // outer x
+  //fFiducialBoundaries.push_back(0.05*tpc.Height()); // bottom y
+  //fFiducialBoundaries.push_back(tpc.Height() - 0.05*tpc.Height()); // top y
+  //fFiducialBoundaries.push_back(0.05*(tpc.Length()*2.));
+  //fFiducialBoundaries.push_back((tpc.Length()*2.) - 0.05*(tpc.Length()*2));
+  
   fFiducialBoundaries.push_back(0.); // central x
-  fFiducialBoundaries.push_back(tpc.Width() - 0.05*tpc.Width()); // outer x
-  fFiducialBoundaries.push_back(0.05*tpc.Height()); // bottom y
-  fFiducialBoundaries.push_back(tpc.Height() - 0.05*tpc.Height()); // top y
-  fFiducialBoundaries.push_back(0.05*(tpc.Length()*2.));
-  fFiducialBoundaries.push_back((tpc.Length()*2.) - 0.05*(tpc.Length()*2));
+  fFiducialBoundaries.push_back(tpc.Width()); // outer x
+  fFiducialBoundaries.push_back(0.); // bottom y
+  fFiducialBoundaries.push_back(tpc.Height()); // top y
+  fFiducialBoundaries.push_back(0.);
+  fFiducialBoundaries.push_back(tpc.Length()*2.);
 
   for (size_t i=0; i<fFiducialBoundaries.size(); i++) {
     std::cout << "\n bound = " << fFiducialBoundaries.at(i);
@@ -176,6 +188,7 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
 
   fInFV = false;
 
+  /*
   art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
   if (!e.getByLabel("tamakerTPC", taHandle)) {
       fTA = false;
@@ -252,7 +265,7 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
     std::cout << "APA ID = " << fAPA_id << std::endl;
     fAPA_ids.push_back(fAPA_id);
   }
-
+*/
   // Define a "handle" to point to a vector of the objects.
   auto truthHandle = e.getValidHandle<std::vector<simb::MCTruth>>(fMCTruthLabel);
 
@@ -265,27 +278,23 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
 
       fCCNC = nu.CCNC();
 
+      fTarget = nu.Target();
+
       fE = neutrino.E();
 
-      std::cout << "E = " << fE << std::endl;
+      std::cout << "E = " << fE << ", POT = " << fPOT << std::endl;
       if (fE < 5. && fnTAs > 0) {
         std::cout << ">>> TRIGGERED LOW ENERGY E = " << fE << std::endl;
       }
 
-      double fPrimaryStart[4];
       double fPrimaryVertex[4];
 
-      const size_t numberTrajectoryPoints = neutrino.NumberTrajectoryPoints();
-      const int last = numberTrajectoryPoints - 1;
+      //const size_t numberTrajectoryPoints = neutrino.NumberTrajectoryPoints();
+      //const int last = numberTrajectoryPoints - 1;
       const TLorentzVector& positionStart = neutrino.Position(0);
-      const TLorentzVector& positionEnd = neutrino.Position(last);
       // Set the vertex position - it should be the same value for each event	
-      positionStart.GetXYZT(fPrimaryStart);
-      positionEnd.GetXYZT(fPrimaryVertex);
+      positionStart.GetXYZT(fPrimaryVertex);
 
-      fnuStartX = fPrimaryStart[0];
-      fnuStartY = fPrimaryStart[1];
-      fnuStartZ = fPrimaryStart[2];
       fnuVertexX = fPrimaryVertex[0];
       fnuVertexY = fPrimaryVertex[1];
       fnuVertexZ = fPrimaryVertex[2];
@@ -309,6 +318,24 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
     }
   }
   hMCNeutrinoEnergy->Fill(fE);
+ 
+  switch(fSimPDG) {
+    case 14:
+      hMCNumuEnergy->Fill(fE);
+      break;
+    case 12:
+      hMCNueEnergy->Fill(fE);
+      break;
+    case -14:
+      hMCNumubarEnergy->Fill(fE);
+      break;
+    case -12:
+      hMCNuebarEnergy->Fill(fE);
+      break;
+    default:
+      std::cout << "Warning - no pdg recognised!" << std::endl;
+  }
+
 }
 
 // Define outputs at start of the job
@@ -317,6 +344,10 @@ void ana::GENIETruthNuProtoDUNE::beginJob() {
   art::ServiceHandle<art::TFileService> tfs;
 
   hMCNeutrinoEnergy = tfs->make<TH1D>("Total_MC_Nu_Energy", ";Energy (GeV);", 20, 0, 200);
+  hMCNumuEnergy = tfs->make<TH1D>("Total_MC_Numu_Energy", ";Energy (GeV);", 20, 0, 200);
+  hMCNueEnergy = tfs->make<TH1D>("Total_MC_Nue_Energy", ";Energy (GeV);", 20, 0, 200);
+  hMCNumubarEnergy = tfs->make<TH1D>("Total_MC_Numubar_Energy", ";Energy (GeV);", 20, 0, 200);
+  hMCNuebarEnergy = tfs->make<TH1D>("Total_MC_Nuebar_Energy", ";Energy (GeV);", 20, 0, 200);
 
   // Get TFileService to create an output tree
   fSimulationNtuple = tfs->make<TTree>("GenieTruth", "GENIE Output Tree");
@@ -327,6 +358,7 @@ void ana::GENIETruthNuProtoDUNE::beginJob() {
   fSimulationNtuple->Branch("Run", &fRun, "Run/I");
   fSimulationNtuple->Branch("PDG", &fSimPDG, "PDG/I");
   fSimulationNtuple->Branch("CCNC", &fCCNC, "CCNC/I");
+  fSimulationNtuple->Branch("Target", &fTarget, "Target/I");
   fSimulationNtuple->Branch("TPCID", &fTPCID);
 
   fSimulationNtuple->Branch("E", &fE, "E/D");
@@ -369,6 +401,35 @@ void ana::GENIETruthNuProtoDUNE::endJob()
   // Implementation of optional member function here.
   std::cout << "Total POT = " << fTotalPOT << std::endl;
   hMCNeutrinoEnergy->Scale(fSetPOT / fTotalPOT);
+  hMCNumuEnergy->Scale(fSetPOT / fTotalPOT);
+  hMCNueEnergy->Scale(fSetPOT / fTotalPOT);
+  hMCNumubarEnergy->Scale(fSetPOT / fTotalPOT);
+  hMCNuebarEnergy->Scale(fSetPOT / fTotalPOT);
+
+  double total_events = hMCNeutrinoEnergy->Integral();
+  double numu_events = hMCNumuEnergy->Integral();
+  double nue_events = hMCNueEnergy->Integral();
+  double numubar_events = hMCNumubarEnergy->Integral();
+  double nuebar_events = hMCNuebarEnergy->Integral();
+
+  std::string total_title = "Total #nu: " + std::to_string(total_events) + " in " + std::to_string(fSetPOT) + " POT";
+  std::string numu_title = "#nu_{#mu}: " + std::to_string(numu_events) + " in " + std::to_string(fSetPOT) + " POT";
+  std::string nue_title = "#nu_{e}: " + std::to_string(nue_events) + " in " + std::to_string(fSetPOT) + " POT";
+  std::string numubar_title = "#bar{#nu}_{#mu}: " + std::to_string(numubar_events) + " in " + std::to_string(fSetPOT) + " POT";
+  std::string nuebar_title = "#bar{#nu}_{e}: " + std::to_string(nuebar_events) + " in " + std::to_string(fSetPOT) + " POT";
+
+  hMCNeutrinoEnergy->SetTitle(total_title.c_str());
+  hMCNumuEnergy->SetTitle(numu_title.c_str());
+  hMCNueEnergy->SetTitle(nue_title.c_str());
+  hMCNumubarEnergy->SetTitle(numubar_title.c_str());
+  hMCNuebarEnergy->SetTitle(nuebar_title.c_str());
+
+  std::cout << total_title << std::endl;
+  std::cout << numu_title << std::endl;
+  std::cout << nue_title << std::endl;
+  std::cout << numubar_title << std::endl;
+  std::cout << nuebar_title << std::endl;
+
 }
 
 DEFINE_ART_MODULE(ana::GENIETruthNuProtoDUNE)

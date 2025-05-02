@@ -15,6 +15,7 @@ art_make(BASENAME_ONLY
   lardata::ArtDataHelper
 	larsim::Simulation
   larreco::Calorimetry
+  larevt::SpaceChargeService
 	nusimdata_SimulationBase
   dunereco::AnaUtils
   NeutrinoAngularRecoAlg
