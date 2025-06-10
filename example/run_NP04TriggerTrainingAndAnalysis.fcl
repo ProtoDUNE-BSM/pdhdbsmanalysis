@@ -30,9 +30,9 @@ physics:
 
  analyzers:
  {
-     SmallTriggerTPCInfoDisplay:
+     NP04TriggerTrainingAndAnalysis:
      {
-         module_type: SmallTriggerTPCInfoDisplay
+         module_type: NP04TriggerTrainingAndAnalysis
          tp_tag: "tpmakerTPC"
          ta_tag: "tamakerTPC"
          tc_tag: "tcmakerTPC"
@@ -41,7 +41,7 @@ physics:
      }
  }
 
- ana:       [ SmallTriggerTPCInfoDisplay ]
+ ana:       [ NP04TriggerTrainingAndAnalysis ]
 
  #stream1:   [ out1 ]
 

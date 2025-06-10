@@ -161,18 +161,26 @@ private:
   std::vector<std::vector<timestamp_t>> fAPA1Window_timepeak;
   std::vector<std::vector<channel_t>> fAPA1Window_channelid;
   std::vector<std::vector<uint32_t>> fAPA1Window_adcintegral;
+  std::vector<std::vector<uint64_t>> fAPA1Window_tot;
+  std::vector<std::vector<uint64_t>> fAPA1Window_adcpeak;
   
   std::vector<std::vector<timestamp_t>> fAPA2Window_timepeak;
   std::vector<std::vector<channel_t>> fAPA2Window_channelid;
   std::vector<std::vector<uint32_t>> fAPA2Window_adcintegral;
+  std::vector<std::vector<uint64_t>> fAPA2Window_tot;
+  std::vector<std::vector<uint64_t>> fAPA2Window_adcpeak;
 
   std::vector<std::vector<timestamp_t>> fAPA3Window_timepeak;
   std::vector<std::vector<channel_t>> fAPA3Window_channelid;
   std::vector<std::vector<uint32_t>> fAPA3Window_adcintegral;
+  std::vector<std::vector<uint64_t>> fAPA3Window_tot;
+  std::vector<std::vector<uint64_t>> fAPA3Window_adcpeak;
   
   std::vector<std::vector<timestamp_t>> fAPA4Window_timepeak;
   std::vector<std::vector<channel_t>> fAPA4Window_channelid;
   std::vector<std::vector<uint32_t>> fAPA4Window_adcintegral;
+  std::vector<std::vector<uint64_t>> fAPA4Window_tot;
+  std::vector<std::vector<uint64_t>> fAPA4Window_adcpeak;
   
   //////////////////////////
   // Special time windows for signal events
@@ -180,14 +188,18 @@ private:
   std::vector<std::vector<timestamp_t>> fNuWindow_timepeak;
   std::vector<std::vector<channel_t>> fNuWindow_channelid;
   std::vector<std::vector<uint32_t>> fNuWindow_adcintegral;
+  std::vector<std::vector<uint64_t>> fNuWindow_tot;
+  std::vector<std::vector<uint64_t>> fNuWindow_adcpeak;
   
   //////////////////////////
-  // Special time windows for signal events
+  // Special time windows for TAs
   /////////////////////////
   std::vector<int> fapaTA;
   std::vector<std::vector<timestamp_t>> fTAWindow_timepeak;
   std::vector<std::vector<channel_t>> fTAWindow_channelid;
   std::vector<std::vector<uint32_t>> fTAWindow_adcintegral;
+  std::vector<std::vector<uint64_t>> fTAWindow_tot;
+  std::vector<std::vector<uint64_t>> fTAWindow_adcpeak;
   
   ////////////////////////
   // fTATree variables //
@@ -438,7 +450,25 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
     fADC_integral_TA = fTriggerActivity[i].adc_integral;
     fADC_peak_TA = fTriggerActivity[i].adc_peak;
     fAlgorithm_TA = static_cast<int>(fTriggerActivity[i].algorithm);
+    
+    auto rop = wireReadout.ChannelToROP(fChannelID);
+    fROP_ID = rop.ROP;
+    auto tpcid = wireReadout.ROPtoTPCs(rop);
 
+    int apaTA = 0;
+    for (const auto &t : tpcid) {
+      std::cout << "TA in TPC " << t.TPC << "\n";
+      if (t.TPC == 0 || t.TPC == 1) {
+        apaTA = 1;
+      } else if (t.TPC == 2 || t.TPC == 3) {
+        apaTA = 3;
+      } else if (t.TPC == 4 || t.TPC == 5) {
+        apaTA = 2;
+      } else if (t.TPC == 6 || t.TPC == 7) {
+        apaTA = 4;
+      }
+    }
+/*
     int apaTA = 0;
     if (fTriggerActivity[i].channel_start >= 2080 && fTriggerActivity[i].channel_end <= 2559) {
       apaTA = 1;
@@ -451,6 +481,7 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
     } else {
       // do nothing
     }
+    */
     fapaTA.push_back(apaTA);
     // Fill tree
     fTATree -> Fill();
@@ -472,7 +503,21 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
     // Get ROP ID (ReadOut Plane ID)
     auto rop = wireReadout.ChannelToROP(fChannelID);
     fROP_ID = rop.ROP;
-     
+    auto tpcid = wireReadout.ROPtoTPCs(rop);
+    int apa = 0;
+    for (const auto &t : tpcid) {
+      //std::cout << "TA in TPC " << t.TPC << "\n";
+      if (t.TPC == 0 || t.TPC == 1) {
+        apa = 1;
+      } else if (t.TPC == 2 || t.TPC == 3) {
+        apa = 3;
+      } else if (t.TPC == 4 || t.TPC == 5) {
+        apa = 2;
+      } else if (t.TPC == 6 || t.TPC == 7) {
+        apa = 4;
+      }
+    }
+    /* 
     // Fill tree
     //fTPTree -> Fill();
     int apa = 0;
@@ -487,6 +532,7 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
     } else {
       // do nothing
     }
+    */
 
     // Determine the time window index (0 to 9).
     int windowIndex = fTime_peak / 20000;
@@ -497,21 +543,29 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
         fAPA1Window_timepeak[windowIndex].push_back(fTime_peak); 
         fAPA1Window_channelid[windowIndex].push_back(fChannelID); 
         fAPA1Window_adcintegral[windowIndex].push_back(fADC_integral); 
+        fAPA1Window_tot[windowIndex].push_back(fTime_over_threshold); 
+        fAPA1Window_adcpeak[windowIndex].push_back(fADC_peak);
         break;
       case 2:
         fAPA2Window_timepeak[windowIndex].push_back(fTime_peak); 
         fAPA2Window_channelid[windowIndex].push_back(fChannelID); 
         fAPA2Window_adcintegral[windowIndex].push_back(fADC_integral); 
+        fAPA2Window_tot[windowIndex].push_back(fTime_over_threshold); 
+        fAPA2Window_adcpeak[windowIndex].push_back(fADC_peak);
         break;
       case 3:
         fAPA3Window_timepeak[windowIndex].push_back(fTime_peak); 
         fAPA3Window_channelid[windowIndex].push_back(fChannelID); 
         fAPA3Window_adcintegral[windowIndex].push_back(fADC_integral); 
+        fAPA3Window_tot[windowIndex].push_back(fTime_over_threshold); 
+        fAPA3Window_adcpeak[windowIndex].push_back(fADC_peak);
         break;
       case 4:
         fAPA4Window_timepeak[windowIndex].push_back(fTime_peak); 
         fAPA4Window_channelid[windowIndex].push_back(fChannelID); 
         fAPA4Window_adcintegral[windowIndex].push_back(fADC_integral); 
+        fAPA4Window_tot[windowIndex].push_back(fTime_over_threshold); 
+        fAPA4Window_adcpeak[windowIndex].push_back(fADC_peak);
         break;
       default: 
         break;
@@ -519,9 +573,12 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
 
     // Fill neutrino window if defined
     if (doNuWindow && fTime_peak >= nuWindowStart && fTime_peak <= nuWindowEnd && apa == fAPA) {
+      std::cout << "Neutrino in APA " << apa << "\n";
       fNuWindow_timepeak[0].push_back(fTime_peak);
       fNuWindow_channelid[0].push_back(fChannelID);
       fNuWindow_adcintegral[0].push_back(fADC_integral);
+      fNuWindow_tot[0].push_back(fTime_over_threshold); 
+      fNuWindow_adcpeak[0].push_back(fADC_peak);
     }
 
     if (fTA > 0) {
@@ -530,6 +587,8 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
           fTAWindow_timepeak[ta].push_back(fTime_peak);
           fTAWindow_channelid[ta].push_back(fChannelID);
           fTAWindow_adcintegral[ta].push_back(fADC_integral);
+          fTAWindow_tot[ta].push_back(fTime_over_threshold); 
+          fTAWindow_adcpeak[ta].push_back(fADC_peak);
         }
       }
     }

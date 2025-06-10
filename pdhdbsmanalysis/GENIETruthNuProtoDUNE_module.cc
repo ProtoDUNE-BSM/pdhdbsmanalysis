@@ -188,7 +188,7 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
 
   fInFV = false;
 
-  /*
+   
   art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
   if (!e.getByLabel("tamakerTPC", taHandle)) {
       fTA = false;
@@ -265,7 +265,7 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
     std::cout << "APA ID = " << fAPA_id << std::endl;
     fAPA_ids.push_back(fAPA_id);
   }
-*/
+
   // Define a "handle" to point to a vector of the objects.
   auto truthHandle = e.getValidHandle<std::vector<simb::MCTruth>>(fMCTruthLabel);
 
