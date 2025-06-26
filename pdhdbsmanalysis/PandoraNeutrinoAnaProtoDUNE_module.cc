@@ -297,12 +297,17 @@ void ana::PandoraNeutrinoAnaProtoDUNE::analyze(art::Event const& e)
   vShowerDirectionZ.clear();
 
   for (const art::Ptr<recob::Slice> &slice : sliceVector) {
+    std::cout << "Found slice." << std::endl;
     std::vector<art::Ptr<recob::PFParticle>> slicePFPs(slicePFPAssoc.at(slice.key()));
     for (const art::Ptr<recob::PFParticle> &slicePFP : slicePFPs) {
+      std::cout << "Found PFP." << std::endl;
       bool isNeutrino = dune_ana::DUNEAnaPFParticleUtils::IsNeutrino(slicePFP);
       bool isPrimary = slicePFP->IsPrimary();
 
-      if (!(isNeutrino && isPrimary)) continue;
+      if (!(isNeutrino && isPrimary)) {
+        std::cout << "Not a primary neutrino, but continuing anyway. It is a " << slicePFP->PdgCode() << std::endl;
+        continue;
+      }
 
       fNNeutrinos++;
       fnuSliceKey.push_back(slice.key());

@@ -35,7 +35,6 @@ art_make(BASENAME_ONLY
 	fhiclcpp::types
 	cetlib::cetlib
 	cetlib_except::cetlib_except
-	ifdh::ifdh 
 	art_root_io::tfile_support
 	ROOT::Core
 	ROOT::Hist
