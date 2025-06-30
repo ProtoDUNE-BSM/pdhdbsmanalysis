@@ -22,6 +22,7 @@
 #include "detdataformats/trigger/TriggerCandidateData.hpp"
 
 
+
 // #include "messagefacility/MessageLogger/MessageLogger.h"
 // #include "art/Framework/Services/Registry/ServiceHandle.h"
 
@@ -37,6 +38,11 @@
 #include "dunereco/FDSensOpt/NeutrinoEnergyRecoAlg/NeutrinoEnergyRecoAlg.h"
 
 #include "larpandora/LArPandoraInterface/LArPandoraHelper.h"
+
+
+#include "lardataobj/RawData/RawDigit.h"
+#include "lardataobj/RawData/raw.h"
+
 
 // additional Framework includes
 #include "art_root_io/TFileService.h"
@@ -82,7 +88,8 @@ public:
   std::vector<double> GetDaugtherInfoDFS(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e);
   std::vector<TruthMatchUtils::G4ID> GetTrueInfoChainDFS(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e);
   TruthMatchUtils::G4ID GetTrueInfo(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e);
-
+  bool groundshake_finder(const std::vector<art::Ptr<raw::RawDigit>> rawDigitPtrs_collection);
+  int SumADCValues(const std::vector<art::Ptr<raw::RawDigit>>& rawDigitPtrs_collection, int start_tick, int end_tick);
 
   // Required functions.
   void analyze(art::Event const& e) override;
@@ -153,6 +160,11 @@ private:
   int fPassCut_aggregate;
   int fSpillStatus_aggregate; 
   double fTime_aggregate; 
+  int fTotalNHits_aggregate;
+  int fTriggerCandidateID_aggregate;
+  int fIsGroundShake; // -1: not set, 0: no ground shake, 1: ground shake
+  int fSumADCLastTicks; // Sum of the last ticks of the ADC values for each channel
+  int fSumADCTriggeredTicks; // Sum of the triggered ticks of the ADC values for each channel
 
 
 
@@ -264,10 +276,19 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
   fPassCut_aggregate = 0;
   fSpillStatus_aggregate = 0;
   fTime_aggregate = 0;
+  fTotalNHits_aggregate = 0;
+  fTriggerCandidateID_aggregate = -1;
+  fIsGroundShake = -1;
+  fSumADCLastTicks = 0; // Sum of the last ticks of the ADC values for each channel
+  fSumADCTriggeredTicks = 0; // Sum of the triggered ticks of the ADC values for each channel
 
 
   fEventNumber++;
   
+  auto allHits = e.getValidHandle<std::vector<recob::Hit>>(fHitsModuleLabel);
+  auto nhits = allHits->size();
+  fTotalNHits_aggregate = nhits;
+  std::cout << "Number of hits in the event: " << nhits << std::endl;
 
   // get the trigger information
   art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
@@ -316,7 +337,7 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
 
 
   // -------------------------------------------------------------------
-  
+
   art::Handle<std::vector<recob::Slice>> sliceHandle = e.getHandle<std::vector<recob::Slice>>(fSliceLabel);
   if (sliceHandle.isValid()){
     std::vector<art::Ptr<recob::Slice>> slicePtrVector;
@@ -369,22 +390,21 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
         vertex_z = -999;
       }
 
-    int pdg = pfparticlePtr->PdgCode();
+      int pdg = pfparticlePtr->PdgCode();
       if (pfparticlePtr->IsPrimary() and (pfparticlePtr->PdgCode() == 12 or pfparticlePtr->PdgCode() == 14 or pfparticlePtr->PdgCode() == 16 or pfparticlePtr->PdgCode() == -12 or pfparticlePtr->PdgCode() == -14 or pfparticlePtr->PdgCode() == -16)) {
-        std::cout << "Neutrino found" << std::endl;
-        if (vertex_y<=550 and vertex_z >= 20){
-          if (info[1] >=4) {
-            fPassCut = 1;
+          std::cout << "Neutrino found" << std::endl;
+          if (vertex_y<=550 and vertex_z >= 20){
+            if (info[1] >=4) {
+              fPassCut = 1;
+            }
           }
-        }
-        fTrueOriginID_aggregate = trueOriginID;
-        // fill the variables
-        fVx_aggregate = vertex_x;
-        fVy_aggregate = vertex_y;
-        fVz_aggregate = vertex_z;
-        fNPFPs_aggregate = info[1];
+          fTrueOriginID_aggregate = trueOriginID;
+          // fill the variables
+          fVx_aggregate = vertex_x;
+          fVy_aggregate = vertex_y;
+          fVz_aggregate = vertex_z;
+          fNPFPs_aggregate = info[1];
       }
-
 
       // -------------------------------------------------------------------
       // can be improved
@@ -442,6 +462,114 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& e)
   else {
     std::cout << "Slice handle is not valid" << std::endl;
   }
+
+  auto triggerCandidateHandle = e.getValidHandle<std::vector<dunedaq::trgdataformats::TriggerCandidateData>>("triggerrawdecoder:daq");
+  const auto& triggerCandidates = *triggerCandidateHandle;
+  fTriggerCandidateID_aggregate = 0;
+  for (const auto &tc : triggerCandidates) {
+    dunedaq::trgdataformats::TriggerCandidateData::Type type_tc = tc.type;
+    if (type_tc != dunedaq::trgdataformats::TriggerCandidateData::Type::kADCSimpleWindow) {
+        std::cout << "NOT GROUND SHAKE!" << std::endl;
+      fTriggerCandidateID_aggregate += 1; // not a ground shake
+    }
+
+  }
+
+  // Get the raw waveform information
+  // pandoranu... | tpcrawdecoder......... | daq.................. | std::vector<raw::RawDigit>................................................................................. | 10240
+  std::vector<art::Ptr<raw::RawDigit>> rawDigitPtrs;
+  std::vector<art::Ptr<raw::RawDigit>> rawDigitPtrs_collection_apa1;
+  std::vector<art::Ptr<raw::RawDigit>> rawDigitPtrs_collection_apa2;
+  std::vector<art::Ptr<raw::RawDigit>> rawDigitPtrs_collection_apa3;
+  std::vector<art::Ptr<raw::RawDigit>> rawDigitPtrs_collection_apa4;
+
+  art::Handle<std::vector<raw::RawDigit>> rawDigitHandle;
+
+  if (e.getByLabel("tpcrawdecoder:daq", rawDigitHandle)) {
+    art::fill_ptr_vector(rawDigitPtrs, rawDigitHandle);
+    std::cout << "Number of raw digits: " << rawDigitPtrs.size() << std::endl;
+    for (const art::Ptr<raw::RawDigit>& rawDigitPtr : rawDigitPtrs) {
+      if (rawDigitPtr->Channel() % 2560 >= 1600) { // only collection channels
+        if (rawDigitPtr->Channel() < 2560) { // APA 1
+          rawDigitPtrs_collection_apa1.push_back(rawDigitPtr);
+        } else if (rawDigitPtr->Channel() < 5120) { // APA 2
+          rawDigitPtrs_collection_apa2.push_back(rawDigitPtr);
+        } else if (rawDigitPtr->Channel() < 7680) { // APA 3
+          rawDigitPtrs_collection_apa3.push_back(rawDigitPtr);
+        } else if (rawDigitPtr->Channel() < 10240) { // APA 4
+          rawDigitPtrs_collection_apa4.push_back(rawDigitPtr);
+        }
+      }
+
+    }
+    fIsGroundShake=0;
+    if (groundshake_finder(rawDigitPtrs_collection_apa1)) {
+      fIsGroundShake += 1;
+    }
+    if (groundshake_finder(rawDigitPtrs_collection_apa2)) {
+      fIsGroundShake += 1;
+    }
+    if (groundshake_finder(rawDigitPtrs_collection_apa3)) {
+      fIsGroundShake += 1;
+    }
+    if (groundshake_finder(rawDigitPtrs_collection_apa4)) {
+      fIsGroundShake += 1;
+    }
+    std::cout << "Ground shake status: " << fIsGroundShake << std::endl;
+    fSumADCLastTicks = 0;
+    int n_ADC_samples = rawDigitPtrs_collection_apa1.at(0)->Samples();
+    fSumADCLastTicks += SumADCValues(rawDigitPtrs_collection_apa1, n_ADC_samples - 1500, n_ADC_samples);
+    fSumADCLastTicks += SumADCValues(rawDigitPtrs_collection_apa2, n_ADC_samples - 1500, n_ADC_samples);
+    fSumADCLastTicks += SumADCValues(rawDigitPtrs_collection_apa3, n_ADC_samples - 1500, n_ADC_samples);
+    fSumADCLastTicks += SumADCValues(rawDigitPtrs_collection_apa4, n_ADC_samples - 1500, n_ADC_samples);
+
+    fSumADCTriggeredTicks = 0;
+    int start_tick = 0;
+    int end_tick = 0;
+
+    if (n_ADC_samples > 9000) {
+      start_tick = 4100;
+      end_tick = 7100;
+    }
+    else{
+      start_tick = 100;
+      end_tick = 3100;
+    }
+
+    fSumADCTriggeredTicks += SumADCValues(rawDigitPtrs_collection_apa1, start_tick, end_tick);
+    fSumADCTriggeredTicks += SumADCValues(rawDigitPtrs_collection_apa2, start_tick, end_tick);
+    fSumADCTriggeredTicks += SumADCValues(rawDigitPtrs_collection_apa3, start_tick, end_tick);
+    fSumADCTriggeredTicks += SumADCValues(rawDigitPtrs_collection_apa4, start_tick, end_tick);
+    
+
+    std::cout << "Sum of last ADC ticks: " << fSumADCLastTicks << std::endl;
+
+  } else {
+    std::cout << "Raw digit handle is not valid" << std::endl;
+  }
+
+
+
+
+
+  // Get the spill information
+    
+  fSpillStatus_aggregate = -1;
+  art::Handle<std::vector<bool>> spillHandle;
+  std::vector<bool> spillStatus;
+  if (e.getByLabel("spillflag:sps", spillHandle)) {
+    spillStatus = *spillHandle;
+    if (spillStatus.size() > 0) {
+      fSpillStatus_aggregate = spillStatus.at(0);
+    }
+  }
+  else {
+    fSpillStatus_aggregate = -1;
+  }
+
+
+  std::cout << "Spill status: " << fSpillStatus_aggregate << std::endl;
+
 
   std::cout << "End of event" << std::endl;
 
@@ -617,6 +745,119 @@ std::vector<double> NeutrinoAna::FindNeutrinos::GetDaugtherInfoDFS(const art::Pt
   return info;
 }
 
+bool NeutrinoAna::FindNeutrinos::groundshake_finder(const std::vector<art::Ptr<raw::RawDigit>> rawDigitPtrs_collection){
+  std::vector<std::vector<short>> rawDigitSamples;
+  // First step: Pedistal Subtraction
+  for (const art::Ptr<raw::RawDigit>& rawDigitPtr : rawDigitPtrs_collection) {
+    // get the ADC samples with the uncompressed function
+    std::vector<short> samples = rawDigitPtr->ADCs();
+    
+    // compute the mode of the vector
+    if (samples.size() == 0) {
+      std::cout << "Raw digit samples are empty" << std::endl;
+      continue;
+    }
+    // compute the mode
+    std::map<short, int> mode_map;
+    for (const short& sample : samples) {
+      if (mode_map.find(sample) == mode_map.end()) {
+        mode_map[sample] = 1;
+      } else {
+        mode_map[sample]++;
+      }
+    }
+    // find the mode
+    short mode = samples[0];
+    int max_count = 0;
+    for (const auto& pair : mode_map) {
+      if (pair.second > max_count) {
+        max_count = pair.second;
+        mode = pair.first;
+      }
+    }
+    // subtract the mode from the samples
+    for (short& sample : samples) {
+      sample -= mode;
+    }
+    rawDigitSamples.push_back(samples);
+  }
+  // Second step: Check for ground shake
+  // Check if at a certain time, at least 85% of the channels have a signal above 10 ADC counts
+  int threshold = 10;
+  int total_channels = rawDigitSamples.size();
+  // If more than 85% of the channels have a signal above the threshold, then it is a ground shake
+  int n_samples = rawDigitSamples.at(0).size();
+  int n_channels_above_threshold = 0;
+  for (int i = 0; i < n_samples; i++) {
+    n_channels_above_threshold = 0; 
+    for (const std::vector<short>& samples : rawDigitSamples) {
+      if (samples[i] > threshold) {
+        n_channels_above_threshold++;
+      }
+    }
+    // Check if the number of channels above the threshold is more than 85% of the total channels
+    if (n_channels_above_threshold > 0.85 * total_channels) {
+      std::cout << "Ground shake detected at sample " << i << std::endl;
+      return true; // Ground shake detected
+    }
+  }
+  return false;
+}
+
+int NeutrinoAna::FindNeutrinos::SumADCValues(const std::vector<art::Ptr<raw::RawDigit>>& rawDigitPtrs_collection, int start_tick, int end_tick) {
+  int sum = 0;
+  std::vector<std::vector<short>> rawDigitSamples;
+  // First step: Pedistal Subtraction
+  for (const art::Ptr<raw::RawDigit>& rawDigitPtr : rawDigitPtrs_collection) {
+    // get the ADC samples with the uncompressed function
+    std::vector<short> samples = rawDigitPtr->ADCs();
+    
+    // compute the mode of the vector
+    if (samples.size() == 0) {
+      std::cout << "Raw digit samples are empty" << std::endl;
+      continue;
+    }
+    // compute the mode
+    std::map<short, int> mode_map;
+    for (const short& sample : samples) {
+      if (mode_map.find(sample) == mode_map.end()) {
+        mode_map[sample] = 1;
+      } else {
+        mode_map[sample]++;
+      }
+    }
+    // find the mode
+    short mode = samples[0];
+    int max_count = 0;
+    for (const auto& pair : mode_map) {
+      if (pair.second > max_count) {
+        max_count = pair.second;
+        mode = pair.first;
+      }
+    }
+    // subtract the mode from the samples
+    for (short& sample : samples) {
+      sample -= mode;
+    }
+    rawDigitSamples.push_back(samples);
+  }
+  
+  int n_ADC_samples = rawDigitSamples.at(0).size();
+  // Second step: Sum the ADC values in the range of start_tick and end_tick
+  for (const std::vector<short>& samples : rawDigitSamples) {
+    for (int index = start_tick; index < end_tick; index++) {
+      if (index < n_ADC_samples) {
+        sum += samples[index];
+      }
+      else {
+        std::cout << "Index " << index << " is out of bounds for samples of size " << samples.size() << std::endl;
+      }
+    }
+  }
+
+  return sum;
+}
+
 void NeutrinoAna::FindNeutrinos::beginSubRun(art::SubRun const& subRun) {
   
   if (fGetTruth){
@@ -689,8 +930,12 @@ void NeutrinoAna::FindNeutrinos::beginJob()
   fTree_aggregate->Branch("passCut", &fPassCut_aggregate);
   fTree_aggregate->Branch("spillStatus", &fSpillStatus_aggregate);
   fTree_aggregate->Branch("time", &fTime_aggregate);
-
-
+  fTree_aggregate->Branch("totalNHits", &fTotalNHits_aggregate);
+  fTree_aggregate->Branch("triggerCandidateID", &fTriggerCandidateID_aggregate);
+  fTree_aggregate->Branch("isGroundShake", &fIsGroundShake);
+  fTree_aggregate->Branch("sumADCLastTicks", &fSumADCLastTicks);
+  fTree_aggregate->Branch("sumADCTriggeredTicks", &fSumADCTriggeredTicks);
+  
 
 }
 
