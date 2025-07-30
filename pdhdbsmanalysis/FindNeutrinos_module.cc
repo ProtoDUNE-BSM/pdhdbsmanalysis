@@ -64,6 +64,13 @@
 
 // ROOT includes
 #include "TTree.h"
+#include "TFile.h"
+#include "TMath.h"
+#include "TF1.h"
+#include "TH1D.h"
+#include "TGraph.h"
+#include "TCanvas.h"
+
 
 #include <vector>
 #include <map>
@@ -119,6 +126,13 @@ private:
         art::Event const& event,
         double startZ,
         double endZ) const;
+
+    std::vector<double> getROI(
+        std::vector<art::Ptr<recob::Hit>> const& hitPtrs,
+        art::Event const& event) const;
+    double muonTrackIsPresent(
+        std::vector<art::Ptr<recob::Hit>> const& hitPtrs,
+        art::Event const& event) const;
 
     // --------------------------------------------------------------------------
     //  Reconstruction algorithms
@@ -228,6 +242,14 @@ private:
     double       fAggregateEnergyDepositedInFifteenth10cm {0.};
     double       fAggregateEnergyDepositedInFirst10cmBefore {0.};
     double       fAggregateEnergyDepositedInSecond10cmBefore {0.};
+    double       fAggregateZROIStart {0.};
+    double       fAggregateZROIEnd {0.};
+    double       fAggregateTimeROIStart {0.};
+    double       fAggregateTimeROIEnd {0.};
+    double       fAggregateTimeFitMean {0.};
+    double       fAggregateTimeFitSigma {0.};
+    double       fAggregateNumberOfHitsInMuonRegion {0.};
+
 
     // --------------------------------------------------------------------------
     //  Internal run / sub-run bookkeeping
@@ -344,6 +366,14 @@ void NeutrinoAna::FindNeutrinos::beginJob()
     fAggregateTree->Branch("energyDepositedInFifteenth10cm", &fAggregateEnergyDepositedInFifteenth10cm);
     fAggregateTree->Branch("energyDepositedInFirst10cmBefore", &fAggregateEnergyDepositedInFirst10cmBefore);
     fAggregateTree->Branch("energyDepositedInSecond10cmBefore", &fAggregateEnergyDepositedInSecond10cmBefore);
+    fAggregateTree->Branch("zROIStart", &fAggregateZROIStart);
+    fAggregateTree->Branch("zROIEnd", &fAggregateZROIEnd);
+    fAggregateTree->Branch("timeROIStart", &fAggregateTimeROIStart);
+    fAggregateTree->Branch("timeROIEnd", &fAggregateTimeROIEnd);
+    fAggregateTree->Branch("timeFitMean", &fAggregateTimeFitMean);
+    fAggregateTree->Branch("timeFitSigma", &fAggregateTimeFitSigma);
+    fAggregateTree->Branch("numberOfHitsInMuonRegion", &fAggregateNumberOfHitsInMuonRegion);
+
 
 }
 
@@ -564,7 +594,322 @@ double NeutrinoAna::FindNeutrinos::computeEnergyDepositedInRange(
 
     return energyDeposited;
 }
+// ============================================================================
+//  Get the ROI (Region of Interest) for neutrino analysis
+// ============================================================================
 
+
+std::vector<double> NeutrinoAna::FindNeutrinos::getROI(
+    std::vector<art::Ptr<recob::Hit>> const& hitPtrs,
+    art::Event const& event) const
+{
+    // First, undestand if the event is in APA 0 and 2 or APA 1 and 3
+    // To do so, do a histogram of the time peaks weighted by the integral of the hits
+    std::unordered_map<int, double> time_histogram_02;
+    std::unordered_map<int, double> time_histogram_13;
+    std::unordered_map<int, double> z_histogram_02;
+    std::unordered_map<int, double> z_histogram_13;
+
+    int n_time_bins = 100;
+    int n_z_bins = 100;
+    int time_min = 0;
+    int time_max = 6000; // Assuming a maximum time peak of 6000 ticks
+    int z_min = 0;
+    int z_max = 460; // Assuming a maximum Z position of 460 cm
+    for (auto const& hit : hitPtrs) {
+        if (!hit) continue;
+        // Include only collection hits
+        if (hit->View() != 2) continue;
+        // Get the channel ID and the time peak
+        int channelID = hit->Channel();
+        int apa_number = channelID / 2560; // 2560 channels per APA
+        int time_peak = hit->PeakTime();
+        int time_bin = (time_peak - time_min) * n_time_bins / (time_max - time_min);
+        if (time_bin < 0 || time_bin >= n_time_bins) continue; // Skip out-of-bounds bins
+        int z_bin = static_cast<int>(computeZFromChannel(channelID) - z_min) * n_z_bins / (z_max - z_min);
+        if (z_bin < 0 || z_bin >= n_z_bins) continue; // Skip out-of-bounds bins
+
+        // Get the integral of the hit
+        double integral = hit->Integral();
+        // Fill the histogram
+        if (apa_number == 0 || apa_number == 2) {
+            if (time_histogram_02.find(time_bin) == time_histogram_02.end()) {
+                time_histogram_02[time_bin] = 0.0;
+            }
+            time_histogram_02[time_bin] += integral;
+            if (z_histogram_02.find(z_bin) == z_histogram_02.end()) {
+                z_histogram_02[z_bin] = 0.0;
+            }
+            z_histogram_02[z_bin] += integral;
+
+        } else if (apa_number == 1 || apa_number == 3) {
+            if (time_histogram_13.find(time_bin) == time_histogram_13.end()) {
+                time_histogram_13[time_bin] = 0.0;
+            }
+            time_histogram_13[time_bin] += integral;
+            if (z_histogram_13.find(z_bin) == z_histogram_13.end()) {
+                z_histogram_13[z_bin] = 0.0;
+            }
+            z_histogram_13[z_bin] += integral;
+        }
+    }
+
+    // Now, find the maximum time peak in each histogram
+    int max_time_bin_02 = -1;
+    double max_time_value_02 = 0.0;
+    for (const auto& [bin, value] : time_histogram_02) {
+        if (value > max_time_value_02) {
+            max_time_value_02 = value;
+            max_time_bin_02 = bin;
+        }
+    }   
+    int max_time_bin_13 = -1;
+    double max_time_value_13 = 0.0;
+    for (const auto& [bin, value] : time_histogram_13) {
+        if (value > max_time_value_13) {
+            max_time_value_13 = value;
+            max_time_bin_13 = bin;
+        }
+    }
+    
+    // Now we have the maximum time bins and their values for both histograms
+    std::cout << "Max time bin (02): " << max_time_bin_02 << " with value: " << max_time_value_02 << std::endl;
+    std::cout << "Max time bin (13): " << max_time_bin_13 << " with value: " << max_time_value_13 << std::endl;
+    // The half that we are interested in is the one with the maximum value
+    std::unordered_map<int, double>* time_histogram;
+    std::unordered_map<int, double>* z_histogram;
+    std::vector<art::Ptr<recob::Hit>> hits_in_half;
+    if (max_time_value_02 > max_time_value_13) {
+        time_histogram = &time_histogram_02;
+        z_histogram = &z_histogram_02;
+        std::cout << "Using APA 0 and 2 half" << std::endl;
+        // Get the hits in the half
+        for (auto const& hit : hitPtrs) {
+            if (!hit) continue;
+            // Include only collection hits
+            if (hit->View() != 2) continue;
+            int channelID = hit->Channel();
+            int apa_number = channelID / 2560; // 2560 channels per APA
+            if (apa_number == 0 || apa_number == 2) {
+                int time_peak = hit->PeakTime();
+                int time_bin = (time_peak - time_min) * n_time_bins / (time_max - time_min);
+                if (time_bin < 0 || time_bin >= n_time_bins) continue; // Skip out-of-bounds bins
+                if (time_histogram->find(time_bin) != time_histogram->end() &&
+                    (*time_histogram)[time_bin] == max_time_value_02) {
+                    hits_in_half.push_back(hit);
+                }
+
+            }
+        }
+
+    } else {
+        time_histogram = &time_histogram_13;
+        z_histogram = &z_histogram_13;
+        std::cout << "Using APA 1 and 3 half" << std::endl;
+        // Get the hits in the half
+        for (auto const& hit : hitPtrs) {
+            if (!hit) continue;
+            // Include only collection hits
+            if (hit->View() != 2) continue;
+            int channelID = hit->Channel();
+            int apa_number = channelID / 2560; // 2560 channels per APA
+            if (apa_number == 1 || apa_number == 3) {
+                int time_peak = hit->PeakTime();
+                int time_bin = (time_peak - time_min) * n_time_bins / (time_max - time_min);
+                if (time_bin < 0 || time_bin >= n_time_bins) continue; // Skip out-of-bounds bins
+                if (time_histogram->find(time_bin) != time_histogram->end() &&
+                    (*time_histogram)[time_bin] == max_time_value_13) {
+                    hits_in_half.push_back(hit);
+                }
+            }
+        }
+
+    }
+    // Now we have the hits in the half
+    std::cout << "Total hits found in half: " << hits_in_half.size() << std::endl;
+
+    // Select the region of interest in Z. Get the maximum Z value in the histogram, and move left and right until the value is below 20% of the maximum
+    int max_z_bin = -1;
+    double max_z_value = 0.0;
+    for (const auto& [bin, value] : *z_histogram) {
+        if (value > max_z_value) {
+            max_z_value = value;
+            max_z_bin = bin;
+        }
+    }
+    std::cout << "Max Z bin: " << max_z_bin << " with value: " << max_z_value << std::endl;
+    int argmax_hist_z_min = max_z_bin;
+    int argmax_hist_z_max = max_z_bin;
+    double threshold = 0.2 * max_z_value;
+    // Move left
+    while (argmax_hist_z_min > 0 && (*z_histogram)[argmax_hist_z_min] > threshold) {
+        --argmax_hist_z_min;
+    }
+    // Move right
+    while (argmax_hist_z_max < n_z_bins - 1 && (*z_histogram)[argmax_hist_z_max] > threshold) {
+        ++argmax_hist_z_max;
+    }   
+
+    std::cout << "Region of interest in Z: [" << argmax_hist_z_min << ", " << argmax_hist_z_max << "]" << std::endl;
+
+    // Select region of interest in time. Get the maximum time value in the histogram, and move left and right until the value is below 20% of the maximum
+    int argmax_hist_time_min = max_time_bin_02;
+    int argmax_hist_time_max = max_time_bin_02;
+    threshold = 0.2 * max_time_value_02;
+    // Move left
+    while (argmax_hist_time_min > 0 && (*time_histogram)[argmax_hist_time_min] > threshold) {
+        --argmax_hist_time_min;
+    }
+    // Move right
+    while (argmax_hist_time_max < n_time_bins - 1 && (*time_histogram)[argmax_hist_time_max] > threshold) {
+        ++argmax_hist_time_max;
+    }   
+    std::cout << "Region of interest in time: [" << argmax_hist_time_min << ", " << argmax_hist_time_max << "]" << std::endl;
+
+    // Use root to fit a gaussian to the time histogram in the region of interest
+    // and get the mean and sigma. 
+    TH1D* time_hist = new TH1D("time_hist", "Time histogram", n_time_bins, 0, n_time_bins);
+    for (const auto& [bin, value] : *time_histogram) {
+            time_hist->SetBinContent(bin + 1, value); // +1 because ROOT uses 1-based indexing
+    }
+    time_hist->GetXaxis()->SetRange(argmax_hist_time_min + 1, argmax_hist_time_max + 1); // +1 because ROOT uses 1-based indexing
+    TF1* fitFunc = new TF1("fitFunc", "gaus", argmax_hist_time_min, argmax_hist_time_max);
+    fitFunc->SetParameters(1.0, 0.0, 1.0); // Initial guess for mean, sigma, and amplitude
+    time_hist->Fit(fitFunc, "Q"); // Fit the histogram with the function
+
+
+    double time_mean = fitFunc->GetParameter(1);
+    double time_sigma = fitFunc->GetParameter(2);
+    
+
+
+    return {
+        static_cast<double>(argmax_hist_z_min),
+        static_cast<double>(argmax_hist_z_max),
+        static_cast<double>(argmax_hist_time_min),
+        static_cast<double>(argmax_hist_time_max),
+        time_mean,
+        time_sigma
+    };
+}
+
+double NeutrinoAna::FindNeutrinos::muonTrackIsPresent(
+    std::vector<art::Ptr<recob::Hit>> const& hitPtrs,
+    art::Event const& event) const
+{
+    // First, get the region of interest
+    auto roi = getROI(hitPtrs, event);
+    double zROIStart = roi[0];
+    double zROIEnd = roi[1];
+    double timeROIStart = roi[2];
+    double timeROIEnd = roi[3];
+    if (zROIEnd - zROIStart < 2) return -1; // Not enough space to fit a line, return false
+    if (timeROIEnd - timeROIStart < 2) return -1; // Not enough space to fit a line, return false
+    // First, find the points to fit a line
+    int n_z_bins = static_cast<int>(zROIEnd - zROIStart);
+    int n_time_bins = static_cast<int>(timeROIEnd - timeROIStart);
+    std::vector<double> z_points(n_z_bins, 0.0);
+    std::vector<double> time_points(n_time_bins, 0.0);
+    std::vector<double> n_time_points(n_z_bins, 0.0);
+    
+    double physical_z_min = zROIStart * 460/100; // Convert to physical z in cm (460 cm is the total length, 100 is the number of bins and z is the bin number)
+    // double physical_z_max = zROIEnd * 460/100; // Convert to physical z in cm
+    // Convert time ROI to physical time in ticks
+
+    // double physical_time_min = timeROIStart * 6000/100; // Convert to physical time in ticks (6000 is the total time, 100 is the number of bins and time is the bin number)
+    // double physical_time_max = timeROIEnd * 6000/100; // Convert to physical time in ticks
+
+    for (auto const& hit : hitPtrs) {
+        if (!hit) continue;
+        // Include only collection hits
+        if (hit->View() != 2) continue;
+
+        // Check if the hit is within the ROI
+        auto channelID = hit->Channel();
+        double z_pos = computeZFromChannel(channelID);
+        double z_bin = z_pos/460 * 100; // Convert to bin number (460 cm is the total length, 100 is the number of bins)
+        if (z_bin < zROIStart || z_bin >= zROIEnd) continue;
+        double time_peak = hit->PeakTime();
+        double time_bin = time_peak / 6000 * 100; // Convert to bin
+        if (time_bin < timeROIStart || time_bin >= timeROIEnd) continue;
+        // Fill the points
+        time_points[static_cast<int>(time_bin - timeROIStart)] += time_peak;
+        n_time_points[static_cast<int>(z_bin - zROIStart)] += 1.0;
+        z_points[static_cast<int>(z_bin - zROIStart)] += z_pos;
+    }
+    // Now we divide the z_points by the n_time_points to get the average z position for each time bin
+    for (size_t i = 0; i < time_points.size(); ++i) {
+        if (n_time_points[i] > 0) {
+            time_points[i] /= n_time_points[i];
+            z_points[i] /= n_time_points[i];
+        } else {
+            return -1; // No hits in this time bin, return false
+        }
+    }
+    // Now we have the points to fit a line
+    // Fit a line to the points using the ROOT TGraph class
+    std::cout<<"Before fit"<<std::endl;    
+
+    TGraph* graph = new TGraph(time_points.size(), &time_points[0], &z_points[0]);
+    // draw the tgraph and save a pdf
+    TCanvas* canvas = new TCanvas("canvas", "Fit Graph", 800, 600);
+    graph->SetTitle("Fit Graph;Time (ticks);Z (cm)");
+    graph->SetMarkerStyle(20);
+    graph->SetMarkerColor(kBlue);
+    graph->SetLineColor(kRed);
+    graph->Draw("AP");  
+    std::string filename = "fit_graph_event_" + std::to_string(fGlobalEventCounter) + ".pdf";
+    canvas->SaveAs(filename.c_str());
+    // delete the canvas to avoid memory leaks
+    delete canvas;
+
+    // Check that time_points and z_points are non-empty and of equal size
+    if (time_points.empty() || z_points.empty() || time_points.size() != z_points.size()) {
+        mf::LogWarning("FindNeutrinos") << "Cannot fit: time_points or z_points are empty or mismatched!";
+        return -1;
+    }
+    std::cout<<"Before fit"<<std::endl;    
+
+    graph->Fit("pol1", "Q"); // Fit a linear function (pol1) to the points
+    TF1* fitFunc = graph->GetFunction("pol1");
+    if (!fitFunc) {
+        mf::LogWarning("FindNeutrinos") << "Fit function not found!";
+        return -1; // No fit function found, return false
+    }
+    std::cout<<"Passing fit"<<std::endl;    
+
+    // Get the fit parameters
+    double slope = fitFunc->GetParameter(1);
+    double intercept = fitFunc->GetParameter(0);
+
+    // count how many hits are in a region around the line in the meter before the ROI
+    // define upper and lower bounds for the line
+    double additional_angle = 0.1; // in radians, this is the angle of the line with respect to the horizontal axis, we will use this to define the upper and lower bounds   // the line with respect to the horizontal axis, we will use this to define the upper and lower bounds
+    double offset_intercept = 100;
+
+    double n_hits_in_muon_region = 0;
+    for (auto const& hit : hitPtrs) {
+        if (!hit) continue;
+        // Include only collection hits
+        if (hit->View() != 2) continue;
+
+        // Check if the hit is within the ROI
+        auto channelID = hit->Channel();
+        double z_pos = computeZFromChannel(channelID);
+        if (z_pos > physical_z_min) continue; // Skip hits after the ROI
+        double time_peak = hit->PeakTime();
+        double lower_bound = intercept + offset_intercept + std::tan(std::atan(slope) - additional_angle) * z_pos;
+        double upper_bound = intercept - offset_intercept + std::tan(std::atan(slope) + additional_angle) * z_pos;
+
+        if (time_peak < lower_bound || time_peak > upper_bound) continue;
+
+        // If we reach this point, the hit is within the bounds
+        // Do something with the hit
+        ++n_hits_in_muon_region;
+    }
+
+    return n_hits_in_muon_region;
+}
 
 // ============================================================================
 //  Compute Z from channel
@@ -732,7 +1077,14 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
     fAggregateEnergyDepositedInFifteenth10cm = -1;
     fAggregateEnergyDepositedInFirst10cmBefore = -1;
     fAggregateEnergyDepositedInSecond10cmBefore = -1;
-
+    fAggregateZROIStart = -1;
+    fAggregateZROIEnd = -1;
+    fAggregateTimeROIStart = -1;
+    fAggregateTimeROIEnd = -1;
+    fAggregateTimeFitMean = -1;
+    fAggregateTimeFitSigma = -1;
+    fAggregateNumberOfHitsInMuonRegion = -1;
+    
     // ------------------------------------------------------------------------
     //  Loop PFParticles
     // ------------------------------------------------------------------------
@@ -830,63 +1182,6 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
             << "Slice hit-time window: "
             << (*minIt)->PeakTime() << " → " << (*maxIt)->PeakTime();
     }
-
-    // // ------------------------------------------------------------------------
-    // //  Get the max and min x,y,z coordinates of all the spacepoints
-    // // ------------------------------------------------------------------------
-    // double minX = 1e6, minY = 1e6, minZ = 1e6;
-    // double maxX = -1e6, maxY = -1e6, maxZ = -1e6;
-
-    // // Get PFParticles associated with slices
-    // art::FindManyP<recob::PFParticle> sliceToPFParticle(
-    //     sliceHandle, event, "pandora");
-    // auto pfParticles = sliceToPFParticle.at(bestSlice.key());
-
-    // // Get PFParticle handle for the SpacePoint association
-    // art::Handle<std::vector<recob::PFParticle>> pfParticleHandle;
-    // event.getByLabel("pandora", pfParticleHandle);
-
-    // // Get SpacePoints associated with PFParticles
-    // art::FindManyP<recob::SpacePoint> pfParticleToSpacePoint(
-    //     pfParticleHandle, event, "pandora");
-
-    // std::vector<art::Ptr<recob::SpacePoint>> allSpacePoints;
-
-    // // Loop through PFParticles in the slice to collect all space points
-    // if (!pfParticles.empty()) {
-    //     for (const auto& pfp : pfParticles) {
-    //         auto spacePoints = pfParticleToSpacePoint.at(pfp.key());
-            
-    //         // Add all space points from this PFParticle to our collection
-    //         for (const auto& sp : spacePoints) {
-    //             allSpacePoints.push_back(sp);
-    //         }
-    //     }
-    // }
-
-    // // Now calculate the bounding box from all collected space points
-    // if (!allSpacePoints.empty()) {
-    //     for (auto const& sp : allSpacePoints) {
-    //         auto xyz = sp->XYZ();
-    //         if (xyz[0] < minX) minX = xyz[0];
-    //         if (xyz[1] < minY) minY = xyz[1];
-    //         if (xyz[2] < minZ) minZ = xyz[2];
-    //         if (xyz[0] > maxX) maxX = xyz[0];
-    //         if (xyz[1] > maxY) maxY = xyz[1];
-    //         if (xyz[2] > maxZ) maxZ = xyz[2];
-    //     }
-        
-    //     std::cout << "Space points in event " << event.id().event() << ": "
-    //             << allSpacePoints.size() << std::endl;
-    //     std::cout << "X range: [" << minX << ", " << maxX << "]" << std::endl;
-    //     std::cout << "Y range: [" << minY << ", " << maxY << "]" << std::endl;
-    //     std::cout << "Z range: [" << minZ << ", " << maxZ << "]" << std::endl;
-        
-    // } else {
-    //     mf::LogWarning("FindNeutrinos")
-    //         << "No space points found in event " << event.id().event();
-    //     return;
-    // }
 
     // ------------------------------------------------------------------------
     //  Loop over the tracks not in the slice to see if there is a track parallel to the
@@ -1036,6 +1331,23 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
     fAggregateEnergyDepositedInFirst10cmBefore = computeEnergyDepositedInRange(HitsCloseToSlice, event, fAggregateVertexZ - 10.0, fAggregateVertexZ);
     fAggregateEnergyDepositedInSecond10cmBefore = computeEnergyDepositedInRange(HitsCloseToSlice, event, fAggregateVertexZ- 20.0, fAggregateVertexZ - 10.0);
 
+    // ------------------------------------------------------------------------
+    //  Muon presence check
+    // ------------------------------------------------------------------------
+
+
+    std::vector<double> roi = getROI(allHitPtrs, event);
+    std::cout << "Region of Interest (ROI) in Z: [" << roi[0] << ", " << roi[1] << "]" << std::endl;
+    std::cout << "Region of Interest (ROI) in Time: [" << roi[2] << ", " << roi[3] << "]" << std::endl;
+    std::cout << "Time Fit Mean: " << roi[4] << ", Time Fit Sigma: " << roi[5] << std::endl;
+    fAggregateZROIStart = roi[0];
+    fAggregateZROIEnd = roi[1];
+    fAggregateTimeROIStart = roi[2];
+    fAggregateTimeROIEnd = roi[3];
+    fAggregateTimeFitMean = roi[4];
+    fAggregateTimeFitSigma = roi[5];
+
+    // fAggregateNumberOfHitsInMuonRegion = muonTrackIsPresent(allHitPtrs, event);
 
     // ------------------------------------------------------------------------
     //  Trigger candidate count (non-ground-shake)
@@ -1165,12 +1477,7 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
             std::cout << "Spill Status Flag: " << fAggregateSpillStatusFlag << std::endl;
             std::cout << "PassSelectionCriterion: " << fAggregatePassSelectionCriterion << std::endl;
             std::cout << "PassSecondSelectionCriterion: " << fAggregatePassSecondSelectionCriterion << std::endl;
-            // print the direction of all the daughters
-            std::cout << "Daughter Directions: " << std::endl;
-            for (auto const& pfp : pfpVec) {
-                auto summary = getInformation(pfp, event);
-                std::cout << "  Direction: (" << summary[1] << ", " << summary[2] << ", " << summary[3] << ")" << std::endl;
-            }
+            std::cout << "Number of hits in muon region: " << fAggregateNumberOfHitsInMuonRegion << std::endl;
 
         }
 
