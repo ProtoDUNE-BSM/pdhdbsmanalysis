@@ -97,7 +97,11 @@ private:
   // Create output TTree
   TTree *fTree_reco;
   TTree *fTree_truth;
-  TTree *fTree_aggregate;
+  TTree *fTree_noCuts;
+  TTree *fTree_fiducialPass;
+  TTree *fTree_dirZPass;
+  TTree *fTree_isTrackPass;
+  TTree *fTree_isShowerPass;
 
   // dune reco functions
   dune::NeutrinoAngularRecoAlg fNeutrinoRecoAngle;
@@ -119,6 +123,9 @@ private:
   int fTrueOriginID_reco;
   int fEventNumber_reco;
   int fPassCut;
+  int fPassCut_after_fiducial;
+  int fPassCut_after_directioncut;
+  int fPassCut_after_trackcut;
 
   // Tree variables true
   unsigned int fEventID_true;
@@ -142,22 +149,62 @@ private:
   double fDirCosZ_true;
   double fKineticEnergy_true; 
 
-  // Tree variables aggregate
-  unsigned int fEventID_aggregate;
-  double fVx_aggregate;
-  double fVy_aggregate;
-  double fVz_aggregate;
-  double fEnergy_aggregate;
-  double fDirectionX_aggregate;
-  double fDirectionY_aggregate;
-  double fDirectionZ_aggregate;
-  int fNHits_aggregate;
-  int fNPFPs_aggregate;
-  int fTrueOriginID_aggregate;
-  int fEventNumber_aggregate;
-  int fPassCut_aggregate;
-  int fSpillStatus_aggregate; 
-  double fTime_aggregate; 
+
+
+  unsigned int fEventID_noCuts;
+  std::vector<double> fVx_noCuts;
+  std::vector<double> fVy_noCuts;
+  std::vector<double> fVz_noCuts;
+  std::vector<double> fEnergy_noCuts;
+  std::vector<double> fDirectionX_noCuts;
+  std::vector<double> fDirectionY_noCuts;
+  std::vector<double> fDirectionZ_noCuts;
+  std::vector<int> fTrueOriginID_noCuts;
+
+  unsigned int fEventID_fiducialPass;
+  std::vector<double> fVx_fiducialPass; 
+  std::vector<double> fVy_fiducialPass;
+  std::vector<double> fVz_fiducialPass;
+  std::vector<double> fEnergy_fiducialPass;
+  std::vector<double> fDirectionX_fiducialPass;
+  std::vector<double> fDirectionY_fiducialPass;
+  std::vector<double> fDirectionZ_fiducialPass;
+  std::vector<int> fTrueOriginID_fiducialPass;
+
+  unsigned int fEventID_dirZPass;
+  std::vector<double> fVx_dirZPass;
+  std::vector<double> fVy_dirZPass;
+  std::vector<double> fVz_dirZPass;
+  std::vector<double> fEnergy_dirZPass;
+  std::vector<double> fDirectionX_dirZPass;
+  std::vector<double> fDirectionY_dirZPass;
+  std::vector<double> fDirectionZ_dirZPass;
+  std::vector<int> fTrueOriginID_dirZPass;
+
+  unsigned int fEventID_isTrackPass;
+  std::vector<double> fVx_isTrackPass;
+  std::vector<double> fVy_isTrackPass;
+  std::vector<double> fVz_isTrackPass;
+  std::vector<double> fEnergy_isTrackPass;
+  std::vector<double> fDirectionX_isTrackPass;
+  std::vector<double> fDirectionY_isTrackPass;
+  std::vector<double> fDirectionZ_isTrackPass;
+  std::vector<int> fTrueOriginID_isTrackPass;
+
+  unsigned int fEventID_isShowerPass;
+  std::vector<double> fVx_isShowerPass;
+  std::vector<double> fVy_isShowerPass;
+  std::vector<double> fVz_isShowerPass;
+  std::vector<double> fEnergy_isShowerPass;
+  std::vector<double> fDirectionX_isShowerPass;
+  std::vector<double> fDirectionY_isShowerPass;
+  std::vector<double> fDirectionZ_isShowerPass;
+  std::vector<int> fTrueOriginID_isShowerPass;
+  std::vector<int> fIsTrack;
+  std::vector<int> fIsShower;
+
+  
+
 
 
 
@@ -175,8 +222,12 @@ private:
   std::string fOutputFolder;
   std::string fOutputFileName;
   bool fGetTruth;
-
   int fTA;
+  int total_events = 0;
+  int pass_energy = 0;
+  int pass_track_multiplicity = 0;
+  int pass_all_cuts = 0;
+
   
 
   // 
@@ -237,6 +288,9 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
   fTrueOriginID_reco = 0;
   fEventNumber_reco = 0;  
   fPassCut = 0;
+  fPassCut_after_fiducial = 0;
+  fPassCut_after_directioncut = 0;
+  fPassCut_after_trackcut = 0;
 
   fEventID_true = 0;
   fVx_true = 0;
@@ -259,42 +313,42 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
   fEventNumber_true = 0;
   fKineticEnergy_true = 0; 
 
-  fEventID_aggregate = 0;
-  fVx_aggregate = 0;
-  fVy_aggregate = 0;
-  fVz_aggregate = 0;
-  fEnergy_aggregate = 0;
-  fDirectionX_aggregate = 0;
-  fDirectionY_aggregate = 0;
-  fDirectionZ_aggregate = 0;
-  fNHits_aggregate = 0;
-  fNPFPs_aggregate = 0;
-  fTrueOriginID_aggregate = 0;
-  fEventNumber_aggregate = 0;
-  fPassCut_aggregate = 0;
-  fSpillStatus_aggregate = 0;
-  fTime_aggregate = 0;
 
- 
+
   fEventNumber++;
   
 
   // get the trigger information
-  art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
-  if (!taHandle.isValid()) {
-    fTA = -1;
-  } 
 
- if (!e.getByLabel(fTALabel, taHandle)) {
-    fTA = 0;
+  art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
+  if (!e.getByLabel(fTALabel, taHandle)) {
+      // std::cout << "Warning: No TriggerActivityData found for label " << fTALabel << std::endl;
+      fTA_true = 0;
+  } else if (taHandle->empty()) {
+      // std::cout << "Warning: TriggerActivityData retrieved but is empty." << std::endl;
+      fTA_true = 0;
   } else {
-    if (taHandle->size() == 0) {
-      fTA = 0;
-    } else {
-      fTA = 1;
-    }
-  } 
-  // double fE = 0;
+      fTA_true = 1;
+  }
+
+  //   art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
+  //   if (!taHandle.isValid()) {
+  //     std::cerr << "Failed to retrieve TriggerActivityData from event. "
+  //                  << "This may be expected if no trigger primitives were found." 
+  //                  << std::endl;
+  //     fTA = -1;
+  //   } 
+
+  //  if (!e.getByLabel(fTALabel, taHandle)) {
+  //     fTA = 0;
+  //   } else {
+  //     if (taHandle->size() == 0) {
+  //       fTA = 0;
+  //     } else {
+  //       fTA = 1;
+  //     }
+  //   } 
+    // double fE = 0;
 
   if (fGetTruth) {
     auto truthHandle = e.getValidHandle<std::vector<simb::MCTruth>>(fMCTruthLabel);
@@ -304,8 +358,8 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
       tempVector.SetXYZM(0, 0, 0, 0);
       totalVector.SetXYZM(0, 0, 0, 0);
       for (int i = 0; i < truth.NParticles(); i++) {
-        std::cout << "Number of particles: " << truth.NParticles() << std::endl;
-        std::cout << "Particle " << i << std::endl;
+        // std::cout << "Number of particles: " << truth.NParticles() << std::endl;
+        // std::cout << "Particle " << i << std::endl;
         const auto& particle = truth.GetParticle(i);
         fE_true = particle.E();
         fEventID_true = e.id().event();
@@ -333,7 +387,7 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
         fDirCosY_true = fPy_true / fP_true;
         fDirCosZ_true = fPz_true / fP_true;
 
-        // fTree_truth->Fill();
+        fTree_truth->Fill();
         tempVector.SetXYZM(particle.Px(), particle.Py(), particle.Pz(), particle.Mass());
         totalVector += tempVector;
 
@@ -350,17 +404,16 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
     }// loop of truthHandle
   }// end of if fGetTruth
 
-  fTree_truth->Fill();
 
 
 
   // -------------------------------------------------------------------
   
   art::Handle<std::vector<recob::Slice>> sliceHandle = e.getHandle<std::vector<recob::Slice>>(fSliceLabel);
+
   if (sliceHandle.isValid()){
     std::vector<art::Ptr<recob::Slice>> slicePtrVector;
     art::fill_ptr_vector(slicePtrVector, sliceHandle);
-    std::cout << "Number of Slices: " << slicePtrVector.size() << std::endl;
 
     // get the most energetic slice
     double max_energy = 0;
@@ -377,25 +430,95 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
         most_energetic_slice = slicePtr;
       }
     }
-    std::cout << "Most energetic slice: " << max_energy << std::endl;
-    // check if the slice is a neutrino
+    
+
     art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fSliceLabel);
     std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(most_energetic_slice.key());
     art::Handle<std::vector<recob::PFParticle>> pfparticleHandle = e.getHandle<std::vector<recob::PFParticle>>(fPFParticleLabel);
+    
 
+
+    std::vector<double> selectedvertexX;
+    std::vector<double> selectedvertexY;
+    std::vector<double> selectedvertexZ;
+    std::vector<double> selectedEnergy;
+    std::vector<double> selectedDirectionX;
+    std::vector<double> selectedDirectionY;
+    std::vector<double> selectedDirectionZ;
+    std::vector<int> selectedTrueOriginID;
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
     for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
-
 
       art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
       std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
       
       std::vector<double> info = GetDaugtherInfoDFS(pfparticlePtr, e);
       
+      // True Origin
       int trueOriginID = -999;
       if (fGetTruth){
         trueOriginID = GetTrueInfo(pfparticlePtr, e);
       }
 
+      // Vertex
+      double vertex_x, vertex_y, vertex_z;
+      if (vertices.size() > 0) {
+        vertex_x = vertices.at(0)->position().X();
+        vertex_y = vertices.at(0)->position().Y();
+        vertex_z = vertices.at(0)->position().Z();
+      }
+      else {
+        vertex_x = -999;
+        vertex_y = -999;
+        vertex_z = -999;
+      }
+      selectedTrueOriginID.push_back(trueOriginID);
+      selectedvertexX.push_back(vertex_x);
+      selectedvertexY.push_back(vertex_y);
+      selectedvertexZ.push_back(vertex_z);
+      dune::Point_t default_v_point;
+      default_v_point.SetCoordinates(vertex_x, vertex_y, vertex_z);
+      dune::AngularRecoOutput nu_angle = fNeutrinoRecoAngle.CalculateNeutrinoAngle(e, most_energetic_slice, default_v_point);
+      selectedDirectionX.push_back(nu_angle.fRecoDirection.x()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedDirectionY.push_back(nu_angle.fRecoDirection.y()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedDirectionZ.push_back(nu_angle.fRecoDirection.z()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedEnergy.push_back(fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true).fNuLorentzVector.E());
+    }// end of loop over pfparticles
+    fEventID_noCuts = e.id().event();
+    fTrueOriginID_noCuts = selectedTrueOriginID;
+    fVx_noCuts = selectedvertexX;
+    fVy_noCuts = selectedvertexY;
+    fVz_noCuts = selectedvertexZ;
+    fEnergy_noCuts = selectedEnergy;
+    fDirectionX_noCuts = selectedDirectionX;
+    fDirectionY_noCuts = selectedDirectionY;
+    fDirectionZ_noCuts = selectedDirectionZ;
+    fTree_noCuts->Fill();
+    selectedvertexX.clear();
+    selectedvertexY.clear();
+    selectedvertexZ.clear();
+    selectedEnergy.clear();
+    selectedDirectionX.clear();
+    selectedDirectionY.clear();
+    selectedDirectionZ.clear();
+    selectedTrueOriginID.clear();
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
+
+      art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
+      std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
+      
+      std::vector<double> info = GetDaugtherInfoDFS(pfparticlePtr, e);
+      
+      // True Origin
+      int trueOriginID = -999;
+      if (fGetTruth){
+        trueOriginID = GetTrueInfo(pfparticlePtr, e);
+      }
+
+      // Vertex
       double vertex_x, vertex_y, vertex_z;
       if (vertices.size() > 0) {
         vertex_x = vertices.at(0)->position().X();
@@ -408,128 +531,315 @@ void hnlAna::AnalyzeEventsHNL::analyze(art::Event const& e)
         vertex_z = -999;
       }
 
-    int pdg = pfparticlePtr->PdgCode();
-      if (pfparticlePtr->IsPrimary() and (pfparticlePtr->PdgCode() == 12 or pfparticlePtr->PdgCode() == 14 or pfparticlePtr->PdgCode() == 16 or pfparticlePtr->PdgCode() == -12 or pfparticlePtr->PdgCode() == -14 or pfparticlePtr->PdgCode() == -16)) {
-        std::cout << "Neutrino found" << std::endl;
-        if (vertex_y<=550 and vertex_z >= 20){ //Fiducial Cut
-          if (info[1] >=4) { //Number of daughter particles cut
-            fPassCut = 1;
-          }
-        }
-      
 
-      // HNL selection using pion-like shower and muon-like track: to be tried 
-          
-       
-
-      
-
-
- 
-        fTrueOriginID_aggregate = trueOriginID;
-        // fill the variables
-        fVx_aggregate = vertex_x;
-        fVy_aggregate = vertex_y;
-        fVz_aggregate = vertex_z;
-        fNPFPs_aggregate = info[1];
+      if (!((vertex_y <= 550) && (vertex_z >= 20))) {
+        continue;
       }
 
 
-      // -------------------------------------------------------------------
-      // can be improved
+      selectedTrueOriginID.push_back(trueOriginID);
+      selectedvertexX.push_back(vertex_x);
+      selectedvertexY.push_back(vertex_y);
+      selectedvertexZ.push_back(vertex_z);
+      dune::Point_t default_v_point;
+      default_v_point.SetCoordinates(vertex_x, vertex_y, vertex_z);
+      dune::AngularRecoOutput nu_angle = fNeutrinoRecoAngle.CalculateNeutrinoAngle(e, most_energetic_slice, default_v_point);
+      selectedDirectionX.push_back(nu_angle.fRecoDirection.x()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedDirectionY.push_back(nu_angle.fRecoDirection.y()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedDirectionZ.push_back(nu_angle.fRecoDirection.z()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedEnergy.push_back(fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true).fNuLorentzVector.E());
+    }// end of loop over pfparticles
+    fEventID_fiducialPass = e.id().event();
+    fTrueOriginID_fiducialPass = selectedTrueOriginID;
+    fVx_fiducialPass = selectedvertexX;
+    fVy_fiducialPass = selectedvertexY;
+    fVz_fiducialPass = selectedvertexZ;
+    fEnergy_fiducialPass = selectedEnergy;
+    fDirectionX_fiducialPass = selectedDirectionX;
+    fDirectionY_fiducialPass = selectedDirectionY;
+    fDirectionZ_fiducialPass = selectedDirectionZ;
+    fTree_fiducialPass->Fill();
+    selectedvertexX.clear();
+    selectedvertexY.clear();
+    selectedvertexZ.clear();
+    selectedEnergy.clear();
+    selectedDirectionX.clear();
+    selectedDirectionY.clear();
+    selectedDirectionZ.clear();
+    selectedTrueOriginID.clear();
+    //////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
-      fEnergy_aggregate += info[2];
-      fDirectionX_aggregate += info[3];
-      fDirectionY_aggregate += info[4];
-      fDirectionZ_aggregate += info[5];
-      fNHits_aggregate += info[0];
-      // -------------------------------------------------------------------
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
 
-      // fill the variables
-      fEventID_reco = e.id().event();
-      fVx_reco = vertex_x;
-      fVy_reco = vertex_y;
-      fVz_reco = vertex_z;
-      fPdgCode_reco = pdg;
-      fEnergy_reco = info[2];
-      fDirectionX_reco = info[3];
-      fDirectionY_reco = info[4];
-      fDirectionZ_reco = info[5];
-      fNHits_reco = info[0];
-      fNPFPs_reco = info[1]; 
-      fTrueOriginID_reco = trueOriginID;
-      fEventNumber_reco = fEventNumber;
-      fTree_reco->Fill();
+      art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
+      std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
+      
+      std::vector<double> info = GetDaugtherInfoDFS(pfparticlePtr, e);
+      
+      // True Origin
+      int trueOriginID = -999;
+      if (fGetTruth){
+        trueOriginID = GetTrueInfo(pfparticlePtr, e);
+      }
+
+      // Vertex
+      double vertex_x, vertex_y, vertex_z;
+      if (vertices.size() > 0) {
+        vertex_x = vertices.at(0)->position().X();
+        vertex_y = vertices.at(0)->position().Y();
+        vertex_z = vertices.at(0)->position().Z();
+      }
+      else {
+        vertex_x = -999;
+        vertex_y = -999;
+        vertex_z = -999;
+      }
 
 
+      if (!((vertex_y <= 550) && (vertex_z >= 20))) {
+        continue;
+      }
 
+
+      dune::Point_t default_v_point;
+      default_v_point.SetCoordinates(vertex_x, vertex_y, vertex_z);
+      dune::AngularRecoOutput nu_angle = fNeutrinoRecoAngle.CalculateNeutrinoAngle(e, most_energetic_slice, default_v_point);
+
+
+      double tempDirectionZ = nu_angle.fRecoDirection.z()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z()));
+      if (tempDirectionZ < 0.7) {
+        continue;
+      }
+
+
+      selectedTrueOriginID.push_back(trueOriginID);
+      selectedvertexX.push_back(vertex_x);
+      selectedvertexY.push_back(vertex_y);
+      selectedvertexZ.push_back(vertex_z);
+      selectedDirectionX.push_back(nu_angle.fRecoDirection.x()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedDirectionY.push_back(nu_angle.fRecoDirection.y()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedDirectionZ.push_back(nu_angle.fRecoDirection.z()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedEnergy.push_back(fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true).fNuLorentzVector.E());
+    }// end of loop over pfparticles
+    fEventID_dirZPass = e.id().event();
+    fTrueOriginID_dirZPass = selectedTrueOriginID;
+    fVx_dirZPass = selectedvertexX;
+    fVy_dirZPass = selectedvertexY;
+    fVz_dirZPass = selectedvertexZ;
+    fEnergy_dirZPass = selectedEnergy;
+    fDirectionX_dirZPass = selectedDirectionX;
+    fDirectionY_dirZPass = selectedDirectionY;
+    fDirectionZ_dirZPass = selectedDirectionZ;
+    fTree_dirZPass->Fill();
+    selectedvertexX.clear();
+    selectedvertexY.clear();
+    selectedvertexZ.clear();
+    selectedEnergy.clear();
+    selectedDirectionX.clear();
+    selectedDirectionY.clear();
+    selectedDirectionZ.clear();
+    selectedTrueOriginID.clear();
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+    for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
+
+      art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
+      std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
+      
+      std::vector<double> info = GetDaugtherInfoDFS(pfparticlePtr, e);
+      
+      // True Origin
+      int trueOriginID = -999;
+      if (fGetTruth){
+        trueOriginID = GetTrueInfo(pfparticlePtr, e);
+      }
+
+      // Vertex
+      double vertex_x, vertex_y, vertex_z;
+      if (vertices.size() > 0) {
+        vertex_x = vertices.at(0)->position().X();
+        vertex_y = vertices.at(0)->position().Y();
+        vertex_z = vertices.at(0)->position().Z();
+      }
+      else {
+        vertex_x = -999;
+        vertex_y = -999;
+        vertex_z = -999;
+      }
+
+
+      if (!((vertex_y <= 550) && (vertex_z >= 20))) {
+        continue;
+      }
+
+
+      dune::Point_t default_v_point;
+      default_v_point.SetCoordinates(vertex_x, vertex_y, vertex_z);
+      dune::AngularRecoOutput nu_angle = fNeutrinoRecoAngle.CalculateNeutrinoAngle(e, most_energetic_slice, default_v_point);
+
+
+      // double tempDirectionZ = nu_angle.fRecoDirection.z()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z()));
+      // if (tempDirectionZ < 0.7) {
+      //   continue;
+      // }
+
+      std::vector<art::Ptr<recob::PFParticle>> daughters = dune_ana::DUNEAnaPFParticleUtils::GetChildParticles(pfparticlePtr, e, fPFParticleLabel);
+      if(daughters.size() != 0){
+        continue;
+      }
+
+      if(!dune_ana::DUNEAnaPFParticleUtils::IsTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel)){
+        continue;
+      }
+
+
+      selectedTrueOriginID.push_back(trueOriginID);
+      selectedvertexX.push_back(vertex_x);
+      selectedvertexY.push_back(vertex_y);
+      selectedvertexZ.push_back(vertex_z);
+      selectedDirectionX.push_back(nu_angle.fRecoDirection.x()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedDirectionY.push_back(nu_angle.fRecoDirection.y()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedDirectionZ.push_back(nu_angle.fRecoDirection.z()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedEnergy.push_back(fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true).fNuLorentzVector.E());
+    }// end of loop over pfparticles
+    fEventID_isTrackPass = e.id().event();
+    fTrueOriginID_isTrackPass = selectedTrueOriginID;
+    fVx_isTrackPass = selectedvertexX;
+    fVy_isTrackPass = selectedvertexY;
+    fVz_isTrackPass = selectedvertexZ;
+    fEnergy_isTrackPass = selectedEnergy;
+    fDirectionX_isTrackPass = selectedDirectionX;
+    fDirectionY_isTrackPass = selectedDirectionY;
+    fDirectionZ_isTrackPass = selectedDirectionZ;
+    fTree_isTrackPass->Fill();
+    selectedvertexX.clear();
+    selectedvertexY.clear();
+    selectedvertexZ.clear();
+    selectedEnergy.clear();
+    selectedDirectionX.clear();
+    selectedDirectionY.clear();
+    selectedDirectionZ.clear();
+    selectedTrueOriginID.clear();
+
+
+    std::vector<int> selectedIsTrack;
+    std::vector<int> selectedIsShower;
+
+    for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
+
+      art::FindManyP<recob::Vertex> pfVertexAssoc(pfparticleHandle, e, fVertexLabel);
+      std::vector<art::Ptr<recob::Vertex>> vertices = pfVertexAssoc.at(pfparticlePtr.key());
+      
+      std::vector<double> info = GetDaugtherInfoDFS(pfparticlePtr, e);
+      
+      // True Origin
+      int trueOriginID = -999;
+      if (fGetTruth){
+        trueOriginID = GetTrueInfo(pfparticlePtr, e);
+      }
+
+      // Vertex
+      double vertex_x, vertex_y, vertex_z;
+      if (vertices.size() > 0) {
+        vertex_x = vertices.at(0)->position().X();
+        vertex_y = vertices.at(0)->position().Y();
+        vertex_z = vertices.at(0)->position().Z();
+      }
+      else {
+        vertex_x = -999;
+        vertex_y = -999;
+        vertex_z = -999;
+      }
+
+
+      if (!((vertex_y <= 550) && (vertex_z >= 20))) {
+        continue;
+      }
+
+
+      dune::Point_t default_v_point;
+      default_v_point.SetCoordinates(vertex_x, vertex_y, vertex_z);
+      dune::AngularRecoOutput nu_angle = fNeutrinoRecoAngle.CalculateNeutrinoAngle(e, most_energetic_slice, default_v_point);
+
+
+      // double tempDirectionZ = nu_angle.fRecoDirection.z()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z()));
+      // if (tempDirectionZ < 0.7) {
+      //   continue;
+      // }
+
+      std::vector<art::Ptr<recob::PFParticle>> daughters = dune_ana::DUNEAnaPFParticleUtils::GetChildParticles(pfparticlePtr, e, fPFParticleLabel);
+      if(daughters.size() != 0){
+        continue;
+      }
+
+      if(dune_ana::DUNEAnaPFParticleUtils::IsTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel)){
+        selectedIsTrack.push_back(1);
+      }
+
+      if(dune_ana::DUNEAnaPFParticleUtils::IsShower(pfparticlePtr, e, fPFParticleLabel, fShowerLabel)){
+        selectedIsShower.push_back(1);
+      }
+      
+      selectedTrueOriginID.push_back(trueOriginID);
+      selectedvertexX.push_back(vertex_x);
+      selectedvertexY.push_back(vertex_y);
+      selectedvertexZ.push_back(vertex_z);
+      selectedDirectionX.push_back(nu_angle.fRecoDirection.x()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedDirectionY.push_back(nu_angle.fRecoDirection.y()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedDirectionZ.push_back(nu_angle.fRecoDirection.z()/(sqrt(nu_angle.fRecoDirection.x()*nu_angle.fRecoDirection.x() + nu_angle.fRecoDirection.y()*nu_angle.fRecoDirection.y() + nu_angle.fRecoDirection.z()*nu_angle.fRecoDirection.z())));
+      selectedEnergy.push_back(fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true).fNuLorentzVector.E());
+    }// end of loop over pfparticles
+    fEventID_isShowerPass = e.id().event();
+    fTrueOriginID_isShowerPass = selectedTrueOriginID;
+    fVx_isShowerPass = selectedvertexX;
+    fVy_isShowerPass = selectedvertexY;
+    fVz_isShowerPass = selectedvertexZ;
+    fEnergy_isShowerPass = selectedEnergy;
+    fDirectionX_isShowerPass = selectedDirectionX;
+    fDirectionY_isShowerPass = selectedDirectionY;
+    fDirectionZ_isShowerPass = selectedDirectionZ;
+    fIsTrack = selectedIsTrack;
+    fIsShower = selectedIsShower;
+
+    if((fIsTrack.size()==fIsShower.size())){
+      fTree_isShowerPass->Fill();
     }
-    // improve the aggregate
-    // Get direction of overall shower from atmospheric reco code
-    dune::Point_t default_v_point;
-    default_v_point.SetCoordinates(fVx_aggregate, fVy_aggregate, fVz_aggregate);
-
-    dune::AngularRecoOutput nu_angle = fNeutrinoRecoAngle.CalculateNeutrinoAngle(e, most_energetic_slice, default_v_point);
-    fDirectionX_aggregate = nu_angle.fRecoDirection.x();
-    fDirectionY_aggregate = nu_angle.fRecoDirection.y();
-    fDirectionZ_aggregate = nu_angle.fRecoDirection.z();
-
-    dune::EnergyRecoOutput energy_output = fNeutrinoRecoEnergy.CalculateNeutrinoEnergy(e, most_energetic_slice, true);
-
-    fEnergy_aggregate = energy_output.fNuLorentzVector.E();
+    selectedvertexX.clear();
+    selectedvertexY.clear();
+    selectedvertexZ.clear();
+    selectedEnergy.clear();
+    selectedDirectionX.clear();
+    selectedDirectionY.clear();
+    selectedDirectionZ.clear();
+    selectedTrueOriginID.clear();
+    ////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 
 
-    // -------------------------------------------------------------------
+    // uint32_t timeHigh_ns = e.time().timeHigh();
+    // uint32_t timeLow_ns = e.time().timeLow();
+    // fTime_aggregate = timeHigh_ns*1e9 + timeLow_ns;
+
+  }// end of if sliceHandle is valid
+}// end of analyze function
+//------------------------------------------------------------------------------------------------------------------
 
 
 
-    fEventID_aggregate = e.id().event();
-    fEventNumber_aggregate = fEventNumber;
-    fPassCut_aggregate = fPassCut;
 
-  }
-  else {
-    std::cout << "Slice handle is not valid" << std::endl;
-  }
-
-  std::cout << "End of event" << std::endl;
-
-
-  uint32_t timeHigh_ns = e.time().timeHigh();
-  uint32_t timeLow_ns = e.time().timeLow();
-
-  fTime_aggregate = timeHigh_ns*1e9 + timeLow_ns;
-  std::cout << "Time: " << fTime_aggregate << std::endl;
-
-  // normalize the direction
-  double norm = sqrt(fDirectionX_aggregate*fDirectionX_aggregate + fDirectionY_aggregate*fDirectionY_aggregate + fDirectionZ_aggregate*fDirectionZ_aggregate);
-  fDirectionX_aggregate = fDirectionX_aggregate/norm;
-  fDirectionY_aggregate = fDirectionY_aggregate/norm;
-  fDirectionZ_aggregate = fDirectionZ_aggregate/norm;
-   
-  fTree_aggregate->Fill();
-
-}
-
+//--------------------------------------------------------------------------------------------------------------------------
 double hnlAna::AnalyzeEventsHNL::GetTotalEnergy(const art::Ptr<recob::Slice>& slicePtr, art::Event const& e){
-
   art::ValidHandle<std::vector<recob::Slice>> sliceHandle = e.getValidHandle<std::vector<recob::Slice>>(fSliceLabel);
-
   art::FindManyP<recob::PFParticle> slicePFPAssoc(sliceHandle, e, fSliceLabel);
   std::vector<art::Ptr<recob::PFParticle>> pfparticlePtrVector = slicePFPAssoc.at(slicePtr.key());
-
-
   double total_energy = 0;
-
   for (const art::Ptr<recob::PFParticle>& pfparticlePtr : pfparticlePtrVector) {
     if (dune_ana::DUNEAnaPFParticleUtils::IsTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel)) {
       // get the track
       art::Ptr<recob::Track> this_track =  dune_ana::DUNEAnaPFParticleUtils::GetTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel);
       art::Ptr<anab::Calorimetry> this_calo = dune_ana::DUNEAnaTrackUtils::GetCalorimetry(this_track, e, fTrackLabel, fCalorimetryLabel);
       total_energy += this_calo->KineticEnergy();
-      // dedx
-      // double dEdx = this_calo->dEdx(); // Assuming you have a method to get dE/dx for the track
-
     }
     else if (dune_ana::DUNEAnaPFParticleUtils::IsShower(pfparticlePtr, e, fPFParticleLabel, fShowerLabel)) {
       // get the shower
@@ -541,26 +851,27 @@ double hnlAna::AnalyzeEventsHNL::GetTotalEnergy(const art::Ptr<recob::Slice>& sl
       total_energy += calos.at(0)->KineticEnergy();
     }
   }
-
   return total_energy;
 }
+
+
+
+
 
 int hnlAna::AnalyzeEventsHNL::GetTrueInfo(const art::Ptr<recob::PFParticle>& pfparticlePtr, art::Event const& e) {
   // needs to be rethinked. What's the point of having the total number of elements with the same origin?
   TruthMatchUtils::G4ID trueID = 0;
   std::vector<TruthMatchUtils::G4ID> trueOriginIDs_vector;
   // get the daughter pfparticles
-  std::cout << "Getting true info" << std::endl;
+  // std::cout << "Getting true info" << std::endl;
   trueOriginIDs_vector = GetTrueInfoChainDFS(pfparticlePtr, e);
-  std::cout << "Got true info" << std::endl;
+  // std::cout << "Got true info" << std::endl;
 
   for (TruthMatchUtils::G4ID trueOriginID : trueOriginIDs_vector) {
     if (trueOriginID == 1) {
       trueID++;
     }
   }
-  
-
   return trueID;
 }
 
@@ -611,7 +922,6 @@ std::vector<double> hnlAna::AnalyzeEventsHNL::GetDaugtherInfoDFS(const art::Ptr<
   info.push_back(0); // Direction Z
 
 
-
   // get the daughter pfparticles
   std::vector<art::Ptr<recob::PFParticle>> daughters = dune_ana::DUNEAnaPFParticleUtils::GetChildParticles(pfparticlePtr, e, fPFParticleLabel);
 
@@ -631,6 +941,11 @@ std::vector<double> hnlAna::AnalyzeEventsHNL::GetDaugtherInfoDFS(const art::Ptr<
       art::Ptr<recob::Track> this_track =  dune_ana::DUNEAnaPFParticleUtils::GetTrack(pfparticlePtr, e, fPFParticleLabel, fTrackLabel);
       art::Ptr<anab::Calorimetry> this_calo = dune_ana::DUNEAnaTrackUtils::GetCalorimetry(this_track, e, fTrackLabel, fCalorimetryLabel);
       info[2] = this_calo->KineticEnergy();
+      // get dedx which is vector float and print the sum with units
+      // std::vector<float> dEdx = this_calo->dEdx();
+      // for (size_t i = 0; i < dEdx.size(); i++) {
+      //   std::cout << "dEdx[" << i << "] = " << dEdx[i] << " MeV/cm" << std::endl;
+      // }
 
       // get the direction
       info[3] = this_track->VertexDirection().X();
@@ -687,10 +1002,13 @@ void hnlAna::AnalyzeEventsHNL::beginJob()
   // Implementation of optional member function here.
   // Get the TFileService to create the output TTree for us
   art::ServiceHandle<art::TFileService> tfs;
-  // fTree = tfs->make<TTree>("tree", "Output TTree");
   fTree_reco = tfs->make<TTree>("tree_reco", "Output TTree reco");
   fTree_truth = tfs->make<TTree>("tree_truth", "Output TTree truth");
-  fTree_aggregate = tfs->make<TTree>("tree_aggregate", "Output TTree aggregate");
+  fTree_noCuts = tfs->make<TTree>("tree_noCuts", "Output TTree noCuts");
+  fTree_fiducialPass = tfs->make<TTree>("tree_fiducialPass", "Output TTree fiducialPass");
+  fTree_dirZPass = tfs->make<TTree>("tree_dirZPass", "Output TTree dirZPass");
+  fTree_isTrackPass = tfs->make<TTree>("tree_isTrackPass", "Output TTree isTrackPass");
+  fTree_isShowerPass = tfs->make<TTree>("tree_isShowerPass", "Output TTree isShowerPass");
 
 
   // Add branches to TTree
@@ -708,6 +1026,9 @@ void hnlAna::AnalyzeEventsHNL::beginJob()
   fTree_reco->Branch("trueOriginID", &fTrueOriginID_reco);
   fTree_reco->Branch("eventNumber", &fEventNumber_reco);
   fTree_reco->Branch("passCut", &fPassCut);
+  fTree_reco->Branch("passCut_after_fiducial", &fPassCut_after_fiducial);
+  fTree_reco->Branch("passCut_after_directioncut", &fPassCut_after_directioncut);
+  fTree_reco->Branch("passCut_after_trackcut", &fPassCut_after_trackcut);
 
   fTree_truth->Branch("eventID", &fEventID_true);
   fTree_truth->Branch("vx", &fVx_true);
@@ -729,21 +1050,63 @@ void hnlAna::AnalyzeEventsHNL::beginJob()
   fTree_truth->Branch("TA", &fTA_true);
   fTree_truth->Branch("eventNumber", &fEventNumber_true);
 
-  fTree_aggregate->Branch("eventID", &fEventID_aggregate);
-  fTree_aggregate->Branch("vx", &fVx_aggregate);
-  fTree_aggregate->Branch("vy", &fVy_aggregate);
-  fTree_aggregate->Branch("vz", &fVz_aggregate);
-  fTree_aggregate->Branch("energy", &fEnergy_aggregate);
-  fTree_aggregate->Branch("directionX", &fDirectionX_aggregate);
-  fTree_aggregate->Branch("directionY", &fDirectionY_aggregate);
-  fTree_aggregate->Branch("directionZ", &fDirectionZ_aggregate);
-  fTree_aggregate->Branch("nHits", &fNHits_aggregate);
-  fTree_aggregate->Branch("nPFPs", &fNPFPs_aggregate);
-  fTree_aggregate->Branch("trueOriginID", &fTrueOriginID_aggregate);
-  fTree_aggregate->Branch("eventNumber", &fEventNumber_aggregate);
-  fTree_aggregate->Branch("passCut", &fPassCut_aggregate);
-  fTree_aggregate->Branch("spillStatus", &fSpillStatus_aggregate);
-  fTree_aggregate->Branch("time", &fTime_aggregate);
+
+  fTree_noCuts->Branch("eventID", &fEventID_noCuts);
+  fTree_noCuts->Branch("vx", &fVx_noCuts);
+  fTree_noCuts->Branch("vy", &fVy_noCuts);
+  fTree_noCuts->Branch("vz", &fVz_noCuts);
+  fTree_noCuts->Branch("energy", &fEnergy_noCuts);
+  fTree_noCuts->Branch("directionX", &fDirectionX_noCuts);
+  fTree_noCuts->Branch("directionY", &fDirectionY_noCuts);
+  fTree_noCuts->Branch("directionZ", &fDirectionZ_noCuts);
+  fTree_noCuts->Branch("trueOriginID", &fTrueOriginID_noCuts);
+
+  fTree_fiducialPass->Branch("eventID", &fEventID_fiducialPass);
+  fTree_fiducialPass->Branch("vx", &fVx_fiducialPass);
+  fTree_fiducialPass->Branch("vy", &fVy_fiducialPass);
+  fTree_fiducialPass->Branch("vz", &fVz_fiducialPass);
+  fTree_fiducialPass->Branch("energy", &fEnergy_fiducialPass);
+  fTree_fiducialPass->Branch("directionX", &fDirectionX_fiducialPass);
+  fTree_fiducialPass->Branch("directionY", &fDirectionY_fiducialPass);
+  fTree_fiducialPass->Branch("directionZ", &fDirectionZ_fiducialPass);
+  fTree_fiducialPass->Branch("trueOriginID", &fTrueOriginID_fiducialPass);
+
+  fTree_dirZPass->Branch("eventID", &fEventID_dirZPass);
+  fTree_dirZPass->Branch("vx", &fVx_dirZPass);
+  fTree_dirZPass->Branch("vy", &fVy_dirZPass);
+  fTree_dirZPass->Branch("vz", &fVz_dirZPass);
+  fTree_dirZPass->Branch("energy", &fEnergy_dirZPass);
+  fTree_dirZPass->Branch("directionX", &fDirectionX_dirZPass);
+  fTree_dirZPass->Branch("directionY", &fDirectionY_dirZPass);
+  fTree_dirZPass->Branch("directionZ", &fDirectionZ_dirZPass);
+  fTree_dirZPass->Branch("trueOriginID", &fTrueOriginID_dirZPass);
+
+
+  fTree_isTrackPass->Branch("eventID", &fEventID_isTrackPass);
+  fTree_isTrackPass->Branch("vx", &fVx_isTrackPass);
+  fTree_isTrackPass->Branch("vy", &fVy_isTrackPass);
+  fTree_isTrackPass->Branch("vz", &fVz_isTrackPass);
+  fTree_isTrackPass->Branch("energy", &fEnergy_isTrackPass);
+  fTree_isTrackPass->Branch("directionX", &fDirectionX_isTrackPass);
+  fTree_isTrackPass->Branch("directionY", &fDirectionY_isTrackPass);
+  fTree_isTrackPass->Branch("directionZ", &fDirectionZ_isTrackPass);
+  fTree_isTrackPass->Branch("trueOriginID", &fTrueOriginID_isTrackPass);
+
+  fTree_isShowerPass->Branch("eventID", &fEventID_isShowerPass);
+  fTree_isShowerPass->Branch("vx", &fVx_isShowerPass);
+  fTree_isShowerPass->Branch("vy", &fVy_isShowerPass);
+  fTree_isShowerPass->Branch("vz", &fVz_isShowerPass);
+  fTree_isShowerPass->Branch("energy", &fEnergy_isShowerPass);
+  fTree_isShowerPass->Branch("directionX", &fDirectionX_isShowerPass);
+  fTree_isShowerPass->Branch("directionY", &fDirectionY_isShowerPass);
+  fTree_isShowerPass->Branch("directionZ", &fDirectionZ_isShowerPass);
+  fTree_isShowerPass->Branch("trueOriginID", &fTrueOriginID_isShowerPass);
+  fTree_isShowerPass->Branch("isTrack", &fIsTrack);
+  fTree_isShowerPass->Branch("isShower", &fIsShower);
+
+
+
+
 
 
 
@@ -751,7 +1114,15 @@ void hnlAna::AnalyzeEventsHNL::beginJob()
 
 void hnlAna::AnalyzeEventsHNL::endJob()
 {
-  // Implementation of optional member function here.
+  // // Implementation of optional member function here.
+  // std::cout << "==== Cut Flow Summary ====" << std::endl;
+  // std::cout << "Total events: " << total_events << std::endl;
+  // std::cout << "After fiducial cut: " << pass_fiducial << " (" << (100.0 * pass_fiducial / total_events) << "%)" << std::endl;
+  // std::cout << "After direction cut: " << pass_direction << " (" << (100.0 * pass_direction / total_events) << "%)" << std::endl;
+  // // std::cout << "After energy cut: " << pass_energy << " (" << (100.0 * pass_energy / total_events) << "%)" << std::endl;
+  // std::cout << "After track multiplicity cut: " << pass_track_multiplicity << " (" << (100.0 * pass_track_multiplicity / total_events) << "%)" << std::endl;
+  // std::cout << "After all cuts: " << pass_all_cuts << " (" << (100.0 * pass_all_cuts / total_events) << "%)" << std::endl;
+  // std::cout << "=========================" << std::endl;
 }
 
 DEFINE_ART_MODULE(hnlAna::AnalyzeEventsHNL)
