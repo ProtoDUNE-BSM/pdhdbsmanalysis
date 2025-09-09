@@ -68,6 +68,7 @@
 #include "TMath.h"
 #include "TF1.h"
 #include "TH1D.h"
+#include "TLine.h"
 #include "TGraph.h"
 #include "TCanvas.h"
 
@@ -134,6 +135,17 @@ private:
         std::vector<art::Ptr<recob::Hit>> const& hitPtrs,
         art::Event const& event) const;
 
+    std::vector<std::vector<std::vector<double>>> createImages(
+        std::vector<art::Ptr<recob::Hit>> const& hitPtrs,
+        double minTime, double maxTime,
+        art::Event const& event) const;
+
+    std::vector<std::vector<double>> createSingleImage(
+        std::vector<art::Ptr<recob::Hit>> const& hitPtrs,
+        art::Event const& event,
+        double minTime, double maxTime,
+        int plane) const;
+
     // --------------------------------------------------------------------------
     //  Reconstruction algorithms
     // --------------------------------------------------------------------------
@@ -160,6 +172,7 @@ private:
     TTree* fRecoTree      {nullptr};
     TTree* fTruthTree     {nullptr};
     TTree* fAggregateTree {nullptr};
+    TTree* fImageTree     {nullptr};
 
     // --------------------------------------------------------------------------
     //  Reco-tree branches
@@ -248,8 +261,22 @@ private:
     double       fAggregateTimeROIEnd {0.};
     double       fAggregateTimeFitMean {0.};
     double       fAggregateTimeFitSigma {0.};
-    double       fAggregateNumberOfHitsInMuonRegion {0.};
-
+    double       fAggregateLengthOfMuonTrack {0.};
+    // --------------------------------------------------------------------------
+    //  Image-tree branches
+    // --------------------------------------------------------------------------
+    std::vector<std::vector<double>> fImageU1;
+    std::vector<std::vector<double>> fImageV1;
+    std::vector<std::vector<double>> fImageZ1;
+    std::vector<std::vector<double>> fImageU2;
+    std::vector<std::vector<double>> fImageV2;
+    std::vector<std::vector<double>> fImageZ2;
+    std::vector<std::vector<double>> fImageU3;
+    std::vector<std::vector<double>> fImageV3;
+    std::vector<std::vector<double>> fImageZ3;
+    std::vector<std::vector<double>> fImageU4;
+    std::vector<std::vector<double>> fImageV4;
+    std::vector<std::vector<double>> fImageZ4;
 
     // --------------------------------------------------------------------------
     //  Internal run / sub-run bookkeeping
@@ -372,9 +399,22 @@ void NeutrinoAna::FindNeutrinos::beginJob()
     fAggregateTree->Branch("timeROIEnd", &fAggregateTimeROIEnd);
     fAggregateTree->Branch("timeFitMean", &fAggregateTimeFitMean);
     fAggregateTree->Branch("timeFitSigma", &fAggregateTimeFitSigma);
-    fAggregateTree->Branch("numberOfHitsInMuonRegion", &fAggregateNumberOfHitsInMuonRegion);
+    fAggregateTree->Branch("lengthOfMuonTrack", &fAggregateLengthOfMuonTrack);
 
-
+    fImageTree = tfs->make<TTree>("tree_image", "One entry per image");
+    fImageTree->Branch("imageU1", &fImageU1);
+    fImageTree->Branch("imageV1", &fImageV1);
+    fImageTree->Branch("imageZ1", &fImageZ1);
+    fImageTree->Branch("imageU2", &fImageU2);
+    fImageTree->Branch("imageV2", &fImageV2);
+    fImageTree->Branch("imageZ2", &fImageZ2);
+    fImageTree->Branch("imageU3", &fImageU3);
+    fImageTree->Branch("imageV3", &fImageV3);
+    fImageTree->Branch("imageZ3", &fImageZ3);
+    fImageTree->Branch("imageU4", &fImageU4);
+    fImageTree->Branch("imageV4", &fImageV4);
+    fImageTree->Branch("imageZ4", &fImageZ4);
+    
 }
 
 // ============================================================================
@@ -607,15 +647,15 @@ std::vector<double> NeutrinoAna::FindNeutrinos::getROI(
     // To do so, do a histogram of the time peaks weighted by the integral of the hits
     std::unordered_map<int, double> time_histogram_02;
     std::unordered_map<int, double> time_histogram_13;
-    std::unordered_map<int, double> z_histogram_02;
-    std::unordered_map<int, double> z_histogram_13;
-
+    
     int n_time_bins = 100;
     int n_z_bins = 100;
     int time_min = 0;
     int time_max = 6000; // Assuming a maximum time peak of 6000 ticks
     int z_min = 0;
     int z_max = 460; // Assuming a maximum Z position of 460 cm
+    double timeROISign = 0;
+    
     for (auto const& hit : hitPtrs) {
         if (!hit) continue;
         // Include only collection hits
@@ -626,9 +666,6 @@ std::vector<double> NeutrinoAna::FindNeutrinos::getROI(
         int time_peak = hit->PeakTime();
         int time_bin = (time_peak - time_min) * n_time_bins / (time_max - time_min);
         if (time_bin < 0 || time_bin >= n_time_bins) continue; // Skip out-of-bounds bins
-        int z_bin = static_cast<int>(computeZFromChannel(channelID) - z_min) * n_z_bins / (z_max - z_min);
-        if (z_bin < 0 || z_bin >= n_z_bins) continue; // Skip out-of-bounds bins
-
         // Get the integral of the hit
         double integral = hit->Integral();
         // Fill the histogram
@@ -637,20 +674,11 @@ std::vector<double> NeutrinoAna::FindNeutrinos::getROI(
                 time_histogram_02[time_bin] = 0.0;
             }
             time_histogram_02[time_bin] += integral;
-            if (z_histogram_02.find(z_bin) == z_histogram_02.end()) {
-                z_histogram_02[z_bin] = 0.0;
-            }
-            z_histogram_02[z_bin] += integral;
-
         } else if (apa_number == 1 || apa_number == 3) {
             if (time_histogram_13.find(time_bin) == time_histogram_13.end()) {
                 time_histogram_13[time_bin] = 0.0;
             }
             time_histogram_13[time_bin] += integral;
-            if (z_histogram_13.find(z_bin) == z_histogram_13.end()) {
-                z_histogram_13[z_bin] = 0.0;
-            }
-            z_histogram_13[z_bin] += integral;
         }
     }
 
@@ -671,91 +699,34 @@ std::vector<double> NeutrinoAna::FindNeutrinos::getROI(
             max_time_bin_13 = bin;
         }
     }
-    
+
+    int max_time_bin;
+    double max_time_value;
+
     // Now we have the maximum time bins and their values for both histograms
     std::cout << "Max time bin (02): " << max_time_bin_02 << " with value: " << max_time_value_02 << std::endl;
     std::cout << "Max time bin (13): " << max_time_bin_13 << " with value: " << max_time_value_13 << std::endl;
     // The half that we are interested in is the one with the maximum value
     std::unordered_map<int, double>* time_histogram;
-    std::unordered_map<int, double>* z_histogram;
-    std::vector<art::Ptr<recob::Hit>> hits_in_half;
     if (max_time_value_02 > max_time_value_13) {
+        max_time_bin = max_time_bin_02;
+        max_time_value = max_time_value_02;
+        timeROISign = -1;
         time_histogram = &time_histogram_02;
-        z_histogram = &z_histogram_02;
         std::cout << "Using APA 0 and 2 half" << std::endl;
-        // Get the hits in the half
-        for (auto const& hit : hitPtrs) {
-            if (!hit) continue;
-            // Include only collection hits
-            if (hit->View() != 2) continue;
-            int channelID = hit->Channel();
-            int apa_number = channelID / 2560; // 2560 channels per APA
-            if (apa_number == 0 || apa_number == 2) {
-                int time_peak = hit->PeakTime();
-                int time_bin = (time_peak - time_min) * n_time_bins / (time_max - time_min);
-                if (time_bin < 0 || time_bin >= n_time_bins) continue; // Skip out-of-bounds bins
-                if (time_histogram->find(time_bin) != time_histogram->end() &&
-                    (*time_histogram)[time_bin] == max_time_value_02) {
-                    hits_in_half.push_back(hit);
-                }
-
-            }
-        }
-
     } else {
+        max_time_bin = max_time_bin_13;
+        max_time_value = max_time_value_13;
+        timeROISign = 1;
         time_histogram = &time_histogram_13;
-        z_histogram = &z_histogram_13;
         std::cout << "Using APA 1 and 3 half" << std::endl;
-        // Get the hits in the half
-        for (auto const& hit : hitPtrs) {
-            if (!hit) continue;
-            // Include only collection hits
-            if (hit->View() != 2) continue;
-            int channelID = hit->Channel();
-            int apa_number = channelID / 2560; // 2560 channels per APA
-            if (apa_number == 1 || apa_number == 3) {
-                int time_peak = hit->PeakTime();
-                int time_bin = (time_peak - time_min) * n_time_bins / (time_max - time_min);
-                if (time_bin < 0 || time_bin >= n_time_bins) continue; // Skip out-of-bounds bins
-                if (time_histogram->find(time_bin) != time_histogram->end() &&
-                    (*time_histogram)[time_bin] == max_time_value_13) {
-                    hits_in_half.push_back(hit);
-                }
-            }
-        }
-
     }
-    // Now we have the hits in the half
-    std::cout << "Total hits found in half: " << hits_in_half.size() << std::endl;
-
-    // Select the region of interest in Z. Get the maximum Z value in the histogram, and move left and right until the value is below 20% of the maximum
-    int max_z_bin = -1;
-    double max_z_value = 0.0;
-    for (const auto& [bin, value] : *z_histogram) {
-        if (value > max_z_value) {
-            max_z_value = value;
-            max_z_bin = bin;
-        }
-    }
-    std::cout << "Max Z bin: " << max_z_bin << " with value: " << max_z_value << std::endl;
-    int argmax_hist_z_min = max_z_bin;
-    int argmax_hist_z_max = max_z_bin;
-    double threshold = 0.2 * max_z_value;
-    // Move left
-    while (argmax_hist_z_min > 0 && (*z_histogram)[argmax_hist_z_min] > threshold) {
-        --argmax_hist_z_min;
-    }
-    // Move right
-    while (argmax_hist_z_max < n_z_bins - 1 && (*z_histogram)[argmax_hist_z_max] > threshold) {
-        ++argmax_hist_z_max;
-    }   
-
-    std::cout << "Region of interest in Z: [" << argmax_hist_z_min << ", " << argmax_hist_z_max << "]" << std::endl;
 
     // Select region of interest in time. Get the maximum time value in the histogram, and move left and right until the value is below 20% of the maximum
-    int argmax_hist_time_min = max_time_bin_02;
-    int argmax_hist_time_max = max_time_bin_02;
-    threshold = 0.2 * max_time_value_02;
+    std::cout << "Max time bin: " << max_time_bin << " with value: " << max_time_value << std::endl;
+    int argmax_hist_time_min = max_time_bin;
+    int argmax_hist_time_max = max_time_bin;
+    double threshold = 0.2 * max_time_value;
     // Move left
     while (argmax_hist_time_min > 0 && (*time_histogram)[argmax_hist_time_min] > threshold) {
         --argmax_hist_time_min;
@@ -763,7 +734,7 @@ std::vector<double> NeutrinoAna::FindNeutrinos::getROI(
     // Move right
     while (argmax_hist_time_max < n_time_bins - 1 && (*time_histogram)[argmax_hist_time_max] > threshold) {
         ++argmax_hist_time_max;
-    }   
+    }
     std::cout << "Region of interest in time: [" << argmax_hist_time_min << ", " << argmax_hist_time_max << "]" << std::endl;
 
     // Use root to fit a gaussian to the time histogram in the region of interest
@@ -780,7 +751,57 @@ std::vector<double> NeutrinoAna::FindNeutrinos::getROI(
 
     double time_mean = fitFunc->GetParameter(1);
     double time_sigma = fitFunc->GetParameter(2);
-    
+
+    // construct the Z histogram for the selected half
+    auto z_histogram = new std::unordered_map<int, double>;
+    for (auto const& hit : hitPtrs) {
+        if (!hit) continue;
+        // Include only collection hits
+        if (hit->View() != 2) continue;
+        int channelID = hit->Channel();
+        int apa_number = channelID / 2560; // 2560 channels per APA
+        if (timeROISign == -1){
+            if (apa_number == 1 || apa_number == 3) continue;
+        }
+        if (timeROISign == 1) {
+            if (apa_number == 0 || apa_number == 2) continue;
+        }
+        // skip if not in the time ROI
+        double time_peak = hit->PeakTime();
+        int time_bin = (time_peak - time_min) * n_time_bins / (time_max - time_min);
+        if (time_bin < argmax_hist_time_min || time_bin >= argmax_hist_time_max) continue;
+        // Get the Z position from the channel ID
+        int z_bin = static_cast<int>(computeZFromChannel(channelID) - z_min) * n_z_bins / (z_max - z_min);
+        if (z_bin < 0 || z_bin >= n_z_bins) continue; // Skip out-of-bounds bins
+        if (z_histogram->find(z_bin) == z_histogram->end()) {
+            (*z_histogram)[z_bin] = 0.0;
+        }
+        (*z_histogram)[z_bin] += hit->Integral();
+    }
+
+    // Select the region of interest in Z. Get the maximum Z value in the histogram, and move left and right until the value is below 20% of the maximum
+    int max_z_bin = -1;
+    double max_z_value = 0.0;
+    for (const auto& [bin, value] : *z_histogram) {
+        if (value > max_z_value) {
+            max_z_value = value;
+            max_z_bin = bin;
+        }
+    }
+    std::cout << "Max Z bin: " << max_z_bin << " with value: " << max_z_value << std::endl;
+    int argmax_hist_z_min = max_z_bin;
+    int argmax_hist_z_max = max_z_bin;
+    threshold = 0.2 * max_z_value;
+    // Move left
+    while (argmax_hist_z_min > 0 && (*z_histogram)[argmax_hist_z_min] > threshold) {
+        --argmax_hist_z_min;
+    }
+    // Move right
+    while (argmax_hist_z_max < n_z_bins - 1 && (*z_histogram)[argmax_hist_z_max] > threshold) {
+        ++argmax_hist_z_max;
+    }   
+
+    std::cout << "Region of interest in Z: [" << argmax_hist_z_min << ", " << argmax_hist_z_max << "]" << std::endl;
 
 
     return {
@@ -789,7 +810,8 @@ std::vector<double> NeutrinoAna::FindNeutrinos::getROI(
         static_cast<double>(argmax_hist_time_min),
         static_cast<double>(argmax_hist_time_max),
         time_mean,
-        time_sigma
+        time_sigma,
+        timeROISign
     };
 }
 
@@ -803,13 +825,14 @@ double NeutrinoAna::FindNeutrinos::muonTrackIsPresent(
     double zROIEnd = roi[1];
     double timeROIStart = roi[2];
     double timeROIEnd = roi[3];
-    if (zROIEnd - zROIStart < 2) return -1; // Not enough space to fit a line, return false
-    if (timeROIEnd - timeROIStart < 2) return -1; // Not enough space to fit a line, return false
+    double timeROISign = roi[6];
+    if (zROIEnd - zROIStart < 1) return -6; // Not enough space to fit a line, return false
+    if (timeROIEnd - timeROIStart < 1) return -7; // Not enough space to fit a line, return false
     // First, find the points to fit a line
     int n_z_bins = static_cast<int>(zROIEnd - zROIStart);
-    int n_time_bins = static_cast<int>(timeROIEnd - timeROIStart);
+    // int n_time_bins = static_cast<int>(timeROIEnd - timeROIStart);
     std::vector<double> z_points(n_z_bins, 0.0);
-    std::vector<double> time_points(n_time_bins, 0.0);
+    std::vector<double> time_points(n_z_bins, 0.0);
     std::vector<double> n_time_points(n_z_bins, 0.0);
     
     double physical_z_min = zROIStart * 460/100; // Convert to physical z in cm (460 cm is the total length, 100 is the number of bins and z is the bin number)
@@ -823,9 +846,16 @@ double NeutrinoAna::FindNeutrinos::muonTrackIsPresent(
         if (!hit) continue;
         // Include only collection hits
         if (hit->View() != 2) continue;
-
-        // Check if the hit is within the ROI
         auto channelID = hit->Channel();
+
+        int apa_number = channelID / 2560; // 2560 channels per APA
+        if (timeROISign == -1){
+            if (apa_number == 1 || apa_number == 3) continue;
+        }
+        if (timeROISign == 1) {
+            if (apa_number == 0 || apa_number == 2) continue;
+        }
+        // Check if the hit is within the ROI
         double z_pos = computeZFromChannel(channelID);
         double z_bin = z_pos/460 * 100; // Convert to bin number (460 cm is the total length, 100 is the number of bins)
         if (z_bin < zROIStart || z_bin >= zROIEnd) continue;
@@ -833,27 +863,106 @@ double NeutrinoAna::FindNeutrinos::muonTrackIsPresent(
         double time_bin = time_peak / 6000 * 100; // Convert to bin
         if (time_bin < timeROIStart || time_bin >= timeROIEnd) continue;
         // Fill the points
-        time_points[static_cast<int>(time_bin - timeROIStart)] += time_peak;
-        n_time_points[static_cast<int>(z_bin - zROIStart)] += 1.0;
-        z_points[static_cast<int>(z_bin - zROIStart)] += z_pos;
+        time_points[static_cast<int>(z_bin - zROIStart)] += time_peak*hit->Integral();
+        n_time_points[static_cast<int>(z_bin - zROIStart)] += hit->Integral();
+        z_points[static_cast<int>(z_bin - zROIStart)] += z_pos*hit->Integral();
     }
     // Now we divide the z_points by the n_time_points to get the average z position for each time bin
     for (size_t i = 0; i < time_points.size(); ++i) {
-        if (n_time_points[i] > 0) {
-            time_points[i] /= n_time_points[i];
-            z_points[i] /= n_time_points[i];
-        } else {
-            return -1; // No hits in this time bin, return false
-        }
+        time_points[i] /= n_time_points[i];
+        z_points[i] /= n_time_points[i];
     }
     // Now we have the points to fit a line
     // Fit a line to the points using the ROOT TGraph class
+    TGraph* graph = new TGraph(time_points.size(), &z_points[0], &time_points[0]);
+
+
+    // Check that time_points and z_points are non-empty and of equal size
+    if (time_points.empty() || z_points.empty()) {
+        mf::LogWarning("FindNeutrinos") << "Cannot fit: time_points or z_points are empty!";
+        return -4;
+    }
+    if (time_points.size() != z_points.size()) {
+        mf::LogWarning("FindNeutrinos") << "Cannot fit: time_points and z_points are mismatched!";
+        return -3;
+    }
     std::cout<<"Before fit"<<std::endl;    
 
-    TGraph* graph = new TGraph(time_points.size(), &time_points[0], &z_points[0]);
+    graph->Fit("pol1", "Q"); // Fit a linear function (pol1) to the points
+    TF1* fitFunc = graph->GetFunction("pol1");
+    if (!fitFunc) {
+        mf::LogWarning("FindNeutrinos") << "Fit function not found!";
+        return -2; // No fit function found, return false
+    }
+    std::cout<<"Passing fit"<<std::endl;    
+
+    // Get the fit parameters
+    double slope = fitFunc->GetParameter(1);
+    double intercept = fitFunc->GetParameter(0);
+    double additional_angle = 0; // in radians, this is the angle of the line with respect to the horizontal axis, we will use this to define the upper and lower bounds   // the line with respect to the horizontal axis, we will use this to define the upper and lower bounds
+    double offset_intercept = 200;
+
+
+
+    // count how many hits are in a region around the line in the meter before the ROI
+    // define upper and lower bounds for the line
+    std::map<double, int> channel_frequency;
+
+    for (auto const& hit : hitPtrs) {
+        if (!hit) continue;
+        // Include only collection hits
+        if (hit->View() != 2) continue;
+        // Check if the hit is within the ROI
+        auto channelID = hit->Channel();
+
+        int apa_number = channelID / 2560; // 2560 channels per APA
+        if (timeROISign == -1){
+            if (apa_number == 1 || apa_number == 3) continue;
+        }
+        if (timeROISign == 1) {
+            if (apa_number == 0 || apa_number == 2) continue;
+        }
+
+        double z_pos = computeZFromChannel(channelID);
+        if (z_pos > physical_z_min) continue; // Skip hits after the ROI
+        double time_peak = hit->PeakTime();
+        double lower_bound = intercept - offset_intercept + std::tan(std::atan(slope) - additional_angle) * z_pos;
+        double upper_bound = intercept + offset_intercept + std::tan(std::atan(slope) + additional_angle) * z_pos;
+        if (time_peak < lower_bound || time_peak > upper_bound) continue;
+        // If we reach this point, the hit is within the bounds
+        // Do something with the hit
+        channel_frequency[z_pos]++;
+    }
+
+    double continuos_length = 0;
+    // get the unique values of zpos in a vector
+    std::vector<double> unique_zpos;
+    for (const auto& [z_pos, frequency] : channel_frequency) {
+        if (frequency > 0) {
+            unique_zpos.push_back(z_pos);
+        }
+    }
+    // sort the unique z positions
+    std::sort(unique_zpos.begin(), unique_zpos.end());
+    // first, check the gap between the last element end the z physical position
+    if (physical_z_min - unique_zpos.back() < 2) {
+        for (int i = unique_zpos.size()-1; i > 0; --i) {
+            if (unique_zpos[i] - unique_zpos[i-1] < 1.5) {
+                continuos_length += unique_zpos[i] - unique_zpos[i-1];
+            } else {
+                break; // stop at the first gap
+            }
+        }
+    }
+
     // draw the tgraph and save a pdf
     TCanvas* canvas = new TCanvas("canvas", "Fit Graph", 800, 600);
-    graph->SetTitle("Fit Graph;Time (ticks);Z (cm)");
+    // draw the line
+    TF1* line = new TF1("line", "[0] + [1]*x", 0, 150);
+    line->SetParameters(intercept, slope);
+    line->SetLineColor(kRed);
+    line->Draw("same");
+    graph->SetTitle("Fit Graph;Z (cm);Time (ticks)");
     graph->SetMarkerStyle(20);
     graph->SetMarkerColor(kBlue);
     graph->SetLineColor(kRed);
@@ -862,53 +971,77 @@ double NeutrinoAna::FindNeutrinos::muonTrackIsPresent(
     canvas->SaveAs(filename.c_str());
     // delete the canvas to avoid memory leaks
     delete canvas;
+    TCanvas* canvas2 = new TCanvas("canvas", "all event Graph", 800, 600);
 
-    // Check that time_points and z_points are non-empty and of equal size
-    if (time_points.empty() || z_points.empty() || time_points.size() != z_points.size()) {
-        mf::LogWarning("FindNeutrinos") << "Cannot fit: time_points or z_points are empty or mismatched!";
-        return -1;
-    }
-    std::cout<<"Before fit"<<std::endl;    
-
-    graph->Fit("pol1", "Q"); // Fit a linear function (pol1) to the points
-    TF1* fitFunc = graph->GetFunction("pol1");
-    if (!fitFunc) {
-        mf::LogWarning("FindNeutrinos") << "Fit function not found!";
-        return -1; // No fit function found, return false
-    }
-    std::cout<<"Passing fit"<<std::endl;    
-
-    // Get the fit parameters
-    double slope = fitFunc->GetParameter(1);
-    double intercept = fitFunc->GetParameter(0);
-
-    // count how many hits are in a region around the line in the meter before the ROI
-    // define upper and lower bounds for the line
-    double additional_angle = 0.1; // in radians, this is the angle of the line with respect to the horizontal axis, we will use this to define the upper and lower bounds   // the line with respect to the horizontal axis, we will use this to define the upper and lower bounds
-    double offset_intercept = 100;
-
-    double n_hits_in_muon_region = 0;
+    // draw all points correspondent to the hits
+    TGraph* allHitsGraph = new TGraph();
     for (auto const& hit : hitPtrs) {
         if (!hit) continue;
         // Include only collection hits
         if (hit->View() != 2) continue;
-
+        // if (hit->Integral()>100 || hit->Int egral()<30) continue;
         // Check if the hit is within the ROI
         auto channelID = hit->Channel();
         double z_pos = computeZFromChannel(channelID);
-        if (z_pos > physical_z_min) continue; // Skip hits after the ROI
         double time_peak = hit->PeakTime();
-        double lower_bound = intercept + offset_intercept + std::tan(std::atan(slope) - additional_angle) * z_pos;
-        double upper_bound = intercept - offset_intercept + std::tan(std::atan(slope) + additional_angle) * z_pos;
-
-        if (time_peak < lower_bound || time_peak > upper_bound) continue;
-
-        // If we reach this point, the hit is within the bounds
-        // Do something with the hit
-        ++n_hits_in_muon_region;
+        
+        allHitsGraph->SetPoint(allHitsGraph->GetN(), z_pos, time_peak);
     }
+    std::string title = "All Hits Graph Ratio: " + std::to_string(continuos_length)+"; Z (cm);Time (ticks);";
+    allHitsGraph->SetTitle(title.c_str());
+    allHitsGraph->SetMarkerStyle(20);
+    allHitsGraph->SetMarkerColor(kBlue);
+    allHitsGraph->SetMarkerSize(0.1);
+    allHitsGraph->SetLineColor(kRed);
+    allHitsGraph->Draw("AP");
+    // draw the line
+    TF1* line2 = new TF1("line", "[0] + [1]*x", 0, 460);
+    line2->SetParameters(intercept+offset_intercept, std::tan(std::atan(slope) - additional_angle));
+    line2->SetLineColor(kRed);
+    line2->Draw("same");
+    TF1* line3 = new TF1("line", "[0] + [1]*x", 0, 460);
+    line3->SetParameters(intercept-offset_intercept, std::tan(std::atan(slope) + additional_angle));
+    line3->SetLineColor(kRed);
+    line3->Draw("same");
+    
+    TLine* line4 = new TLine(zROIStart* 460/100, 0, zROIStart* 460/100, 6000);
+    line4->SetLineColor(kGreen);
+    line4->Draw("same");
 
-    return n_hits_in_muon_region;
+    TLine* line5 = new TLine(zROIEnd* 460/100, 0, zROIEnd* 460/100, 6000);
+    line5->SetLineColor(kGreen);
+    line5->Draw("same");
+
+    // set horizontal lines
+    TLine* line6 = new TLine(0, timeROIStart* 6000/100, 460, timeROIStart* 6000/100);
+    line6->SetLineColor(kBlue);
+    line6->Draw("same");
+
+    TLine* line7 = new TLine(0, timeROIEnd* 6000/100, 460, timeROIEnd* 6000/100);
+    line7->SetLineColor(kBlue);
+    line7->Draw("same");
+
+    std::string filename2 = "all_hits_graph_event_" + std::to_string(fGlobalEventCounter) + ".pdf";
+    canvas2->SaveAs(filename2.c_str());
+    delete allHitsGraph;
+    delete canvas2;
+
+    TCanvas* canvas3 = new TCanvas("canvas", "Hits charge histogram", 800, 600);
+    // fill an histogram with the hit charge
+    TH1F* charge_hist = new TH1F("charge_hist", "Hits Charge Histogram;Charge (ADC counts);Entries", 100, 0, 1000);
+    for (auto const& hit : hitPtrs) {
+        if (!hit) continue;
+        // Include only collection hits
+        if (hit->View() != 2) continue;
+        charge_hist->Fill(hit->Integral());
+    }
+    charge_hist->Draw();
+    std::string filename3 = "hits_charge_histogram_event_" + std::to_string(fGlobalEventCounter) + ".pdf";
+    canvas3->SaveAs(filename3.c_str());
+    delete charge_hist;
+    delete canvas3;
+
+    return continuos_length;
 }
 
 // ============================================================================
@@ -944,6 +1077,117 @@ double NeutrinoAna::FindNeutrinos::computeZFromChannel(int channel) const
     double z_pos = channel_number * wire_pitch_in_cm_collection + offset;
 
     return z_pos;
+}
+// ============================================================================
+//  Create a vector with all the images
+// ============================================================================
+std::vector<std::vector<std::vector<double>>> NeutrinoAna::FindNeutrinos::createImages(
+    std::vector<art::Ptr<recob::Hit>> const& hitPtrs,
+    double minTime, double maxTime,
+    art::Event const& event) const
+{
+    std::vector<std::vector<std::vector<double>>> imageData;
+    std::vector<art::Ptr<recob::Hit>> hitsU1;
+    std::vector<art::Ptr<recob::Hit>> hitsV1;
+    std::vector<art::Ptr<recob::Hit>> hitsZ1;
+    std::vector<art::Ptr<recob::Hit>> hitsU2;
+    std::vector<art::Ptr<recob::Hit>> hitsV2;
+    std::vector<art::Ptr<recob::Hit>> hitsZ2;
+    std::vector<art::Ptr<recob::Hit>> hitsU3;
+    std::vector<art::Ptr<recob::Hit>> hitsV3;
+    std::vector<art::Ptr<recob::Hit>> hitsZ3;
+    std::vector<art::Ptr<recob::Hit>> hitsU4;
+    std::vector<art::Ptr<recob::Hit>> hitsV4;
+    std::vector<art::Ptr<recob::Hit>> hitsZ4;
+
+
+    for (auto const& hit : hitPtrs) {
+        if (!hit) continue;
+        auto channelID = hit->Channel();
+        int apa = channelID / 2560;
+        int view = hit->View();
+        if (apa==0){
+            if (view == 0) hitsU1.push_back(hit);
+            else if (view == 1) hitsV1.push_back(hit);
+            else if (view == 2) hitsZ1.push_back(hit);
+        }
+        if (apa==1){
+            if (view == 0) hitsU2.push_back(hit);
+            else if (view == 1) hitsV2.push_back(hit);
+            else if (view == 2) hitsZ2.push_back(hit);
+        }
+        if (apa==2){
+            if (view == 0) hitsU3.push_back(hit);
+            else if (view == 1) hitsV3.push_back(hit);
+            else if (view == 2) hitsZ3.push_back(hit);
+        }
+        if (apa==3){
+            if (view == 0) hitsU4.push_back(hit);
+            else if (view == 1) hitsV4.push_back(hit);
+            else if (view == 2) hitsZ4.push_back(hit);
+        }
+    }
+    std::cout << "Min Time: " << minTime << ", Max Time: " << maxTime << std::endl;
+
+    // Let's create the image
+    imageData.push_back(createSingleImage(hitsU1, event, minTime, maxTime, 0));
+    imageData.push_back(createSingleImage(hitsV1, event, minTime, maxTime, 1));
+    imageData.push_back(createSingleImage(hitsZ1, event, minTime, maxTime, 2));
+    imageData.push_back(createSingleImage(hitsU2, event, minTime, maxTime, 0));
+    imageData.push_back(createSingleImage(hitsV2, event, minTime, maxTime, 1));
+    imageData.push_back(createSingleImage(hitsZ2, event, minTime, maxTime, 2));
+    imageData.push_back(createSingleImage(hitsU3, event, minTime, maxTime, 0));
+    imageData.push_back(createSingleImage(hitsV3, event, minTime, maxTime, 1));
+    imageData.push_back(createSingleImage(hitsZ3, event, minTime, maxTime, 2));
+    imageData.push_back(createSingleImage(hitsU4, event, minTime, maxTime, 0));
+    imageData.push_back(createSingleImage(hitsV4, event, minTime, maxTime, 1));
+    imageData.push_back(createSingleImage(hitsZ4, event, minTime, maxTime, 2));
+
+    return imageData;
+
+}
+
+std::vector<std::vector<double>> NeutrinoAna::FindNeutrinos::createSingleImage(
+    std::vector<art::Ptr<recob::Hit>> const& hitPtrs,
+    art::Event const& event,
+    double minTime, double maxTime,
+    int plane) const
+{
+    if (plane < 0 || plane > 2) {
+        throw std::invalid_argument("Invalid plane number");
+    }
+    std::vector<std::vector<double>> image;
+    // Initialize a 2D vector with zeros, size 500x500
+    image.resize(500, std::vector<double>(500, 0.0));
+    int offset;
+    if (plane == 0) offset = 0;
+    else if (plane == 1) offset = 800;
+    else offset = 1600;
+    int total_channels_in_plane;
+    if (plane == 0) total_channels_in_plane = 800;
+    else if (plane == 1) total_channels_in_plane = 800;
+    else total_channels_in_plane = 960;
+
+    // loop over the hits and fill the image
+    for (auto const& hit : hitPtrs) {
+        if (!hit) continue;
+        auto channelID = hit->Channel();
+        int channel_in_plane = channelID%2560 - offset;
+        double charge_integral = hit->Integral();
+        double time_peak = hit->PeakTime();
+        if (time_peak>maxTime || time_peak<minTime) continue; // Skip out-of-bounds times
+        int time_pixel = static_cast<int>((time_peak - minTime) / (maxTime - minTime) * 500);
+        if (time_pixel < 0 || time_pixel >= 500) std::cout << "Warning: time_pixel out of bounds: " << time_pixel << std::endl;
+        time_pixel = std::clamp(time_pixel, 0, 499);
+        int channel_pixel = channel_in_plane * 500 / total_channels_in_plane;
+        if (channel_pixel < 0 || channel_pixel >= 500) std::cout << "Warning: channel_pixel out of bounds: " << channel_pixel << std::endl;
+        channel_pixel = std::clamp(channel_pixel, 0, 499);
+        image[time_pixel][channel_pixel] += charge_integral;
+    }
+    
+
+
+    return image;
 }
 
 // ============================================================================
@@ -1083,7 +1327,7 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
     fAggregateTimeROIEnd = -1;
     fAggregateTimeFitMean = -1;
     fAggregateTimeFitSigma = -1;
-    fAggregateNumberOfHitsInMuonRegion = -1;
+    fAggregateLengthOfMuonTrack = -1;
     
     // ------------------------------------------------------------------------
     //  Loop PFParticles
@@ -1212,58 +1456,97 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
     }
 
     fAggregatePassSecondSelectionCriterion = 1;  // assume true until proven otherwise
-    double maxTrackDot = 0.7;
+    // double maxTrackDot = 0.7;
     for (auto const& trackPtr : trackPtrs) {
-        // Skip tracks that are part of the slice
-        if (sliceTracksIDs.find(trackPtr->ID()) != sliceTracksIDs.end()) continue;
+        // // Skip tracks that are part of the slice
+        // if (sliceTracksIDs.find(trackPtr->ID()) != sliceTracksIDs.end()) continue;
     
-        if (trackPtr->Length() < 10.) continue;  // skip short tracks
-        // Skip tracks if vertex z is bigger than neutrino vertex z
-        if (trackPtr->Vertex().Z() > fAggregateVertexZ) continue;
+        // if (trackPtr->Length() < 10.) continue;  // skip short tracks
+        // // Skip tracks if vertex z is bigger than neutrino vertex z
+        // if (trackPtr->Vertex().Z() > fAggregateVertexZ) continue;
 
-        // Calculate the dot product with the neutrino direction
-        // Normalize the track direction vector
-        double tx = trackPtr->VertexDirection().X();
-        // double ty = trackPtr->VertexDirection().Y();
-        double tz = trackPtr->VertexDirection().Z();
-        // double tnorm = std::sqrt(tx * tx + ty * ty + tz * tz);
+        // // Calculate the dot product with the neutrino direction
+        // // Normalize the track direction vector
+        // double tx = trackPtr->VertexDirection().X();
+        // // double ty = trackPtr->VertexDirection().Y();
+        // double tz = trackPtr->VertexDirection().Z();
+        // // double tnorm = std::sqrt(tx * tx + ty * ty + tz * tz);
+        // // if (tnorm == 0) continue; // skip invalid direction
+
+        // // double dot = (tx / tnorm) * fAggregateDirectionX +
+        // //          (ty / tnorm) * fAggregateDirectionY +
+        // //          (tz / tnorm) * fAggregateDirectionZ;
+        
+        // double tnorm = std::sqrt(tx * tx + tz * tz);
         // if (tnorm == 0) continue; // skip invalid direction
 
         // double dot = (tx / tnorm) * fAggregateDirectionX +
-        //          (ty / tnorm) * fAggregateDirectionY +
         //          (tz / tnorm) * fAggregateDirectionZ;
         
-        double tnorm = std::sqrt(tx * tx + tz * tz);
-        if (tnorm == 0) continue; // skip invalid direction
+        // if (std::abs(dot) > maxTrackDot) {
 
-        double dot = (tx / tnorm) * fAggregateDirectionX +
-                 (tz / tnorm) * fAggregateDirectionZ;
-        
-        if (std::abs(dot) > maxTrackDot) {
-            // check how far the track is from the neutrino aggregate vertex
-            double trackVtxX = trackPtr->Vertex().X();
-            double trackVtxY = trackPtr->Vertex().Y();
-            double trackVtxZ = trackPtr->Vertex().Z();
-            // first, calculate the vector from the neutrino vertex to the track vertex
-            double dx = trackVtxX - fAggregateVertexX;
-            double dy = trackVtxY - fAggregateVertexY;
-            double dz = trackVtxZ - fAggregateVertexZ;
-            // then, calculate the vector product with the neutrino direction
-            double vector_product_x = dy * fAggregateDirectionZ - dz * fAggregateDirectionY;
-            double vector_product_y = dz * fAggregateDirectionX - dx * fAggregateDirectionZ;
-            double vector_product_z = dx * fAggregateDirectionY - dy * fAggregateDirectionX;
-            double distance = std::sqrt(vector_product_x * vector_product_x +
-                                        vector_product_y * vector_product_y +
-                                        vector_product_z * vector_product_z);
-            distance /= std::sqrt(fAggregateDirectionX * fAggregateDirectionX +
-                                fAggregateDirectionY * fAggregateDirectionY +
-                                fAggregateDirectionZ * fAggregateDirectionZ);
+        // I want the start or the end point to have Z < fAggregateVertexZ
+        double trackVtxZ = trackPtr->Vertex().Z();
+        double trackEndZ = trackPtr->End().Z();
+        if (std::abs(trackVtxZ - trackEndZ) < 5.) {
+            continue; // skip short tracks
+        }
 
-            if (distance < 20.) { 
+        if (!(trackVtxZ < fAggregateVertexZ || trackEndZ < fAggregateVertexZ)) {
+            continue;
+        }
+        double tx = trackPtr->VertexDirection().X();
+        double ty = trackPtr->VertexDirection().Y();
+        double tz = trackPtr->VertexDirection().Z();
+        double norm = std::sqrt(tx * tx + ty * ty + tz * tz);
+        if (norm == 0) continue; // skip invalid direction
+        tx /= norm;
+        ty /= norm;
+        tz /= norm;
+
+        if (ty > 0.8) {
+            continue;
+        }
+        norm = std::sqrt(tx * tx + tz * tz);
+        if (norm == 0) continue; // skip invalid direction
+        tx /= norm;
+        tz /= norm;
+        if (tz > 0.8) {
+            continue;
+        }
+
+
+        if (true) {
+            // Calculate the distance from the neutrino vertex (P0) to the track line (P1 + t*v)
+            // P0 = (fAggregateVertexX, fAggregateVertexY, fAggregateVertexZ)
+            // P1 = (trackVtxX, trackVtxY, trackVtxZ)
+            // v = (track direction, normalized)
+            double P0x = fAggregateVertexX;
+            double P0y = fAggregateVertexY;
+            double P0z = fAggregateVertexZ;
+            double P1x = trackPtr->Vertex().X();
+            double P1y = trackPtr->Vertex().Y();
+            double P1z = trackPtr->Vertex().Z();
+            double vx = trackPtr->VertexDirection().X();
+            double vy = trackPtr->VertexDirection().Y();
+            double vz = trackPtr->VertexDirection().Z();
+            double vnorm = std::sqrt(vx*vx + vy*vy + vz*vz);
+            if (vnorm == 0) continue;
+            vx /= vnorm;
+            vy /= vnorm;
+            vz /= vnorm;
+            // Vector from track vertex to neutrino vertex
+            double dx = P0x - P1x;
+            double dy = P0y - P1y;
+            double dz = P0z - P1z;
+            // Cross product of (P0-P1) and v
+            double cx = dy * vz - dz * vy;
+            double cy = dz * vx - dx * vz;
+            double cz = dx * vy - dy * vx;
+            double distance = std::sqrt(cx*cx + cy*cy + cz*cz); // v is normalized, so divide by 1
+
+            if (distance < 30.) { 
                 fAggregatePassSecondSelectionCriterion = 0;
-                std::cout << "Found a track parallel to the neutrino direction with dot product "
-                          << dot << " and distance " << distance
-                          << " from the neutrino vertex." << std::endl;
             }
         }
     }
@@ -1337,17 +1620,18 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
 
 
     std::vector<double> roi = getROI(allHitPtrs, event);
-    std::cout << "Region of Interest (ROI) in Z: [" << roi[0] << ", " << roi[1] << "]" << std::endl;
-    std::cout << "Region of Interest (ROI) in Time: [" << roi[2] << ", " << roi[3] << "]" << std::endl;
-    std::cout << "Time Fit Mean: " << roi[4] << ", Time Fit Sigma: " << roi[5] << std::endl;
     fAggregateZROIStart = roi[0];
     fAggregateZROIEnd = roi[1];
     fAggregateTimeROIStart = roi[2];
     fAggregateTimeROIEnd = roi[3];
     fAggregateTimeFitMean = roi[4];
     fAggregateTimeFitSigma = roi[5];
+    std::cout << "Region of Interest (ROI) in Z: [" << fAggregateZROIStart << ", " << fAggregateZROIEnd << "]" << std::endl;
+    std::cout << "Region of Interest (ROI) in Time: [" << fAggregateTimeROIStart << ", " << fAggregateTimeROIEnd << "]" << std::endl;
+    std::cout << "Time Fit Mean: " << fAggregateTimeFitMean << ", Time Fit Sigma: " << fAggregateTimeFitSigma << std::endl;
+    std::cout << "----------" << std::endl;
 
-    // fAggregateNumberOfHitsInMuonRegion = muonTrackIsPresent(allHitPtrs, event);
+    fAggregateLengthOfMuonTrack = muonTrackIsPresent(allHitPtrs, event);
 
     // ------------------------------------------------------------------------
     //  Trigger candidate count (non-ground-shake)
@@ -1447,41 +1731,55 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
     // ------------------------------------------------------------------------
     fAggregateTree->Fill();
 
-        // Print aggregate neutrino candidate info if present
-        if (fAggregateVertexX!=0 and fAggregateVertexX!=-1) // selected reco
-        {
-            std::cout << "Aggregate Neutrino Candidate Info:" << std::endl;
-            std::cout << "Vertex: (" << fAggregateVertexX << ", " << fAggregateVertexY << ", " << fAggregateVertexZ << ")" << std::endl;
-            std::cout << "Direction: (" << fAggregateDirectionX << ", " << fAggregateDirectionY << ", " << fAggregateDirectionZ << ")" << std::endl;
-            std::cout << "Direction2: (" << fAggregateDirectionX2 << ", " << fAggregateDirectionY2 << ", " << fAggregateDirectionZ2 << ")" << std::endl;
-            std::cout << "Energy: " << fAggregateReconstructedEnergy << " GeV" << std::endl;
-            std::cout << "TrueOriginID: " << fAggregateTrueOriginID << std::endl;
-            std::cout << "Number of PFParticles: " << fAggregateNumberOfPFParticles << std::endl;
-            std::cout << "Energy deposited in the first 10 cm: " << fAggregateEnergyDepositedInFirst10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the second 10 cm: " << fAggregateEnergyDepositedInSecond10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the third 10 cm: " << fAggregateEnergyDepositedInThird10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the fourth 10 cm: " << fAggregateEnergyDepositedInFourth10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the fifth 10 cm: " << fAggregateEnergyDepositedInFifth10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the sixth 10 cm: " << fAggregateEnergyDepositedInSixth10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the seventh 10 cm: " << fAggregateEnergyDepositedInSeventh10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the eighth 10 cm: " << fAggregateEnergyDepositedInEighth10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the ninth 10 cm: " << fAggregateEnergyDepositedInNinth10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the tenth 10 cm: " << fAggregateEnergyDepositedInTenth10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the eleventh 10 cm: " << fAggregateEnergyDepositedInEleventh10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the twelfth 10 cm: " << fAggregateEnergyDepositedInTwelfth10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the thirteenth 10 cm: " << fAggregateEnergyDepositedInThirteenth10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the fourteenth 10 cm: " << fAggregateEnergyDepositedInFourteenth10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the fifteenth 10 cm: " << fAggregateEnergyDepositedInFifteenth10cm << " ADC" << std::endl;
-            std::cout << "Energy deposited in the first 10 cm before: " << fAggregateEnergyDepositedInFirst10cmBefore << " ADC" << std::endl;
-            std::cout << "Energy deposited in the second 10 cm before: " << fAggregateEnergyDepositedInSecond10cmBefore << " ADC" << std::endl;
-            std::cout << "Spill Status Flag: " << fAggregateSpillStatusFlag << std::endl;
-            std::cout << "PassSelectionCriterion: " << fAggregatePassSelectionCriterion << std::endl;
-            std::cout << "PassSecondSelectionCriterion: " << fAggregatePassSecondSelectionCriterion << std::endl;
-            std::cout << "Number of hits in muon region: " << fAggregateNumberOfHitsInMuonRegion << std::endl;
+    // Print aggregate neutrino candidate info if present
+    std::cout << "Aggregate Neutrino Candidate Info:" << std::endl;
+    std::cout << "Vertex: (" << fAggregateVertexX << ", " << fAggregateVertexY << ", " << fAggregateVertexZ << ")" << std::endl;
+    std::cout << "Direction: (" << fAggregateDirectionX << ", " << fAggregateDirectionY << ", " << fAggregateDirectionZ << ")" << std::endl;
+    std::cout << "Direction2: (" << fAggregateDirectionX2 << ", " << fAggregateDirectionY2 << ", " << fAggregateDirectionZ2 << ")" << std::endl;
+    std::cout << "Energy: " << fAggregateReconstructedEnergy << " GeV" << std::endl;
+    std::cout << "TrueOriginID: " << fAggregateTrueOriginID << std::endl;
+    std::cout << "Number of PFParticles: " << fAggregateNumberOfPFParticles << std::endl;
+    std::cout << "Spill Status Flag: " << fAggregateSpillStatusFlag << std::endl;
+    std::cout << "PassSelectionCriterion: " << fAggregatePassSelectionCriterion << std::endl;
+    std::cout << "PassSecondSelectionCriterion: " << fAggregatePassSecondSelectionCriterion << std::endl;
+    std::cout << "Number length of track in muon region: " << fAggregateLengthOfMuonTrack << std::endl;
+    std::cout << "Track Muon density: " << fAggregateLengthOfMuonTrack/(fAggregateZROIStart * 460/100.0) << std::endl;
+    // ------------------------------------------------------------------------
+    //  Create image and fill tree
+    // ------------------------------------------------------------------------
 
-        }
+    double central_time = (fAggregateTimeROIStart * 6000/100.0 + fAggregateTimeROIStart * 6000/100.0) / 2.0;
+
+    double minTime = central_time - 600;
+    double maxTime = central_time + 600;
+
+    if (minTime < 0) {
+        minTime = 0;
+        maxTime = 1200;
+    }
+    if (maxTime > 5800) {
+        maxTime = 5800;
+        minTime = 4600;
+    }
+
+    std::vector<std::vector<std::vector<double>>> imageData = createImages(allHitPtrs, minTime, maxTime, event);
+    fImageU1=imageData[0];
+    fImageV1=imageData[1];
+    fImageZ1=imageData[2];
+    fImageU2=imageData[3];
+    fImageV2=imageData[4];
+    fImageZ2=imageData[5];
+    fImageU3=imageData[6];
+    fImageV3=imageData[7];
+    fImageZ3=imageData[8];
+    fImageU4=imageData[9];
+    fImageV4=imageData[10];
+    fImageZ4=imageData[11];
+
+    fImageTree->Fill();
 
 }
+
 
 // ============================================================================
 //  Module registration macro
