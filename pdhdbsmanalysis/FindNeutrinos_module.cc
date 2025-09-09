@@ -955,91 +955,91 @@ double NeutrinoAna::FindNeutrinos::muonTrackIsPresent(
         }
     }
 
-    // draw the tgraph and save a pdf
-    TCanvas* canvas = new TCanvas("canvas", "Fit Graph", 800, 600);
-    // draw the line
-    TF1* line = new TF1("line", "[0] + [1]*x", 0, 150);
-    line->SetParameters(intercept, slope);
-    line->SetLineColor(kRed);
-    line->Draw("same");
-    graph->SetTitle("Fit Graph;Z (cm);Time (ticks)");
-    graph->SetMarkerStyle(20);
-    graph->SetMarkerColor(kBlue);
-    graph->SetLineColor(kRed);
-    graph->Draw("AP");  
-    std::string filename = "fit_graph_event_" + std::to_string(fGlobalEventCounter) + ".pdf";
-    canvas->SaveAs(filename.c_str());
-    // delete the canvas to avoid memory leaks
-    delete canvas;
-    TCanvas* canvas2 = new TCanvas("canvas", "all event Graph", 800, 600);
+    // // draw the tgraph and save a pdf
+    // TCanvas* canvas = new TCanvas("canvas", "Fit Graph", 800, 600);
+    // // draw the line
+    // TF1* line = new TF1("line", "[0] + [1]*x", 0, 150);
+    // line->SetParameters(intercept, slope);
+    // line->SetLineColor(kRed);
+    // line->Draw("same");
+    // graph->SetTitle("Fit Graph;Z (cm);Time (ticks)");
+    // graph->SetMarkerStyle(20);
+    // graph->SetMarkerColor(kBlue);
+    // graph->SetLineColor(kRed);
+    // graph->Draw("AP");  
+    // std::string filename = "fit_graph_event_" + std::to_string(fGlobalEventCounter) + ".pdf";
+    // canvas->SaveAs(filename.c_str());
+    // // delete the canvas to avoid memory leaks
+    // delete canvas;
+    // TCanvas* canvas2 = new TCanvas("canvas", "all event Graph", 800, 600);
 
-    // draw all points correspondent to the hits
-    TGraph* allHitsGraph = new TGraph();
-    for (auto const& hit : hitPtrs) {
-        if (!hit) continue;
-        // Include only collection hits
-        if (hit->View() != 2) continue;
-        // if (hit->Integral()>100 || hit->Int egral()<30) continue;
-        // Check if the hit is within the ROI
-        auto channelID = hit->Channel();
-        double z_pos = computeZFromChannel(channelID);
-        double time_peak = hit->PeakTime();
+    // // draw all points correspondent to the hits
+    // TGraph* allHitsGraph = new TGraph();
+    // for (auto const& hit : hitPtrs) {
+    //     if (!hit) continue;
+    //     // Include only collection hits
+    //     if (hit->View() != 2) continue;
+    //     // if (hit->Integral()>100 || hit->Int egral()<30) continue;
+    //     // Check if the hit is within the ROI
+    //     auto channelID = hit->Channel();
+    //     double z_pos = computeZFromChannel(channelID);
+    //     double time_peak = hit->PeakTime();
         
-        allHitsGraph->SetPoint(allHitsGraph->GetN(), z_pos, time_peak);
-    }
-    std::string title = "All Hits Graph Ratio: " + std::to_string(continuos_length)+"; Z (cm);Time (ticks);";
-    allHitsGraph->SetTitle(title.c_str());
-    allHitsGraph->SetMarkerStyle(20);
-    allHitsGraph->SetMarkerColor(kBlue);
-    allHitsGraph->SetMarkerSize(0.1);
-    allHitsGraph->SetLineColor(kRed);
-    allHitsGraph->Draw("AP");
-    // draw the line
-    TF1* line2 = new TF1("line", "[0] + [1]*x", 0, 460);
-    line2->SetParameters(intercept+offset_intercept, std::tan(std::atan(slope) - additional_angle));
-    line2->SetLineColor(kRed);
-    line2->Draw("same");
-    TF1* line3 = new TF1("line", "[0] + [1]*x", 0, 460);
-    line3->SetParameters(intercept-offset_intercept, std::tan(std::atan(slope) + additional_angle));
-    line3->SetLineColor(kRed);
-    line3->Draw("same");
+    //     allHitsGraph->SetPoint(allHitsGraph->GetN(), z_pos, time_peak);
+    // }
+    // std::string title = "All Hits Graph Ratio: " + std::to_string(continuos_length)+"; Z (cm);Time (ticks);";
+    // allHitsGraph->SetTitle(title.c_str());
+    // allHitsGraph->SetMarkerStyle(20);
+    // allHitsGraph->SetMarkerColor(kBlue);
+    // allHitsGraph->SetMarkerSize(0.1);
+    // allHitsGraph->SetLineColor(kRed);
+    // allHitsGraph->Draw("AP");
+    // // draw the line
+    // TF1* line2 = new TF1("line", "[0] + [1]*x", 0, 460);
+    // line2->SetParameters(intercept+offset_intercept, std::tan(std::atan(slope) - additional_angle));
+    // line2->SetLineColor(kRed);
+    // line2->Draw("same");
+    // TF1* line3 = new TF1("line", "[0] + [1]*x", 0, 460);
+    // line3->SetParameters(intercept-offset_intercept, std::tan(std::atan(slope) + additional_angle));
+    // line3->SetLineColor(kRed);
+    // line3->Draw("same");
     
-    TLine* line4 = new TLine(zROIStart* 460/100, 0, zROIStart* 460/100, 6000);
-    line4->SetLineColor(kGreen);
-    line4->Draw("same");
+    // TLine* line4 = new TLine(zROIStart* 460/100, 0, zROIStart* 460/100, 6000);
+    // line4->SetLineColor(kGreen);
+    // line4->Draw("same");
 
-    TLine* line5 = new TLine(zROIEnd* 460/100, 0, zROIEnd* 460/100, 6000);
-    line5->SetLineColor(kGreen);
-    line5->Draw("same");
+    // TLine* line5 = new TLine(zROIEnd* 460/100, 0, zROIEnd* 460/100, 6000);
+    // line5->SetLineColor(kGreen);
+    // line5->Draw("same");
 
-    // set horizontal lines
-    TLine* line6 = new TLine(0, timeROIStart* 6000/100, 460, timeROIStart* 6000/100);
-    line6->SetLineColor(kBlue);
-    line6->Draw("same");
+    // // set horizontal lines
+    // TLine* line6 = new TLine(0, timeROIStart* 6000/100, 460, timeROIStart* 6000/100);
+    // line6->SetLineColor(kBlue);
+    // line6->Draw("same");
 
-    TLine* line7 = new TLine(0, timeROIEnd* 6000/100, 460, timeROIEnd* 6000/100);
-    line7->SetLineColor(kBlue);
-    line7->Draw("same");
+    // TLine* line7 = new TLine(0, timeROIEnd* 6000/100, 460, timeROIEnd* 6000/100);
+    // line7->SetLineColor(kBlue);
+    // line7->Draw("same");
 
-    std::string filename2 = "all_hits_graph_event_" + std::to_string(fGlobalEventCounter) + ".pdf";
-    canvas2->SaveAs(filename2.c_str());
-    delete allHitsGraph;
-    delete canvas2;
+    // std::string filename2 = "all_hits_graph_event_" + std::to_string(fGlobalEventCounter) + ".pdf";
+    // canvas2->SaveAs(filename2.c_str());
+    // delete allHitsGraph;
+    // delete canvas2;
 
-    TCanvas* canvas3 = new TCanvas("canvas", "Hits charge histogram", 800, 600);
-    // fill an histogram with the hit charge
-    TH1F* charge_hist = new TH1F("charge_hist", "Hits Charge Histogram;Charge (ADC counts);Entries", 100, 0, 1000);
-    for (auto const& hit : hitPtrs) {
-        if (!hit) continue;
-        // Include only collection hits
-        if (hit->View() != 2) continue;
-        charge_hist->Fill(hit->Integral());
-    }
-    charge_hist->Draw();
-    std::string filename3 = "hits_charge_histogram_event_" + std::to_string(fGlobalEventCounter) + ".pdf";
-    canvas3->SaveAs(filename3.c_str());
-    delete charge_hist;
-    delete canvas3;
+    // TCanvas* canvas3 = new TCanvas("canvas", "Hits charge histogram", 800, 600);
+    // // fill an histogram with the hit charge
+    // TH1F* charge_hist = new TH1F("charge_hist", "Hits Charge Histogram;Charge (ADC counts);Entries", 100, 0, 1000);
+    // for (auto const& hit : hitPtrs) {
+    //     if (!hit) continue;
+    //     // Include only collection hits
+    //     if (hit->View() != 2) continue;
+    //     charge_hist->Fill(hit->Integral());
+    // }
+    // charge_hist->Draw();
+    // std::string filename3 = "hits_charge_histogram_event_" + std::to_string(fGlobalEventCounter) + ".pdf";
+    // canvas3->SaveAs(filename3.c_str());
+    // delete charge_hist;
+    // delete canvas3;
 
     return continuos_length;
 }
