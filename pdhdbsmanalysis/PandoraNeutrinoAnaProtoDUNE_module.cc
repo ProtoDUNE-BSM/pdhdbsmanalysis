@@ -129,6 +129,7 @@ private:
   std::vector<int> fnuSliceKey;
   std::vector<int> fnuID;
   std::vector<int> fRecoPDG;
+  std::vector<int> fParentID;
   std::vector<int> fnuScore;
   std::vector<int> fSliceIndex;
   unsigned int fNPFParticles;
@@ -277,6 +278,7 @@ void ana::PandoraNeutrinoAnaProtoDUNE::analyze(art::Event const& e)
   fnuSliceKey.clear();
   fnuID.clear();
   fRecoPDG.clear();
+  fParentID.clear();
   fNPFParticles = 0;
   fNNeutrinos = 0;
   fNPrimaryChildren = 0;
@@ -303,8 +305,10 @@ void ana::PandoraNeutrinoAnaProtoDUNE::analyze(art::Event const& e)
       std::cout << "Found PFP." << std::endl;
       bool isNeutrino = dune_ana::DUNEAnaPFParticleUtils::IsNeutrino(slicePFP);
       bool isPrimary = slicePFP->IsPrimary();
+      
 
       if (!(isNeutrino && isPrimary)) {
+      //if (!(isPrimary)) {
         std::cout << "Not a primary neutrino, but continuing anyway. It is a " << slicePFP->PdgCode() << std::endl;
         continue;
       }
@@ -315,7 +319,9 @@ void ana::PandoraNeutrinoAnaProtoDUNE::analyze(art::Event const& e)
       fNPFParticles = slicePFPs.size();
       fNPrimaryChildren = slicePFP->NumDaughters();
       fRecoPDG.push_back(slicePFP->PdgCode());
+      fParentID.push_back(slicePFP->Parent());
 
+      //if (!(isNeutrino)) continue;
       art::Ptr<larpandoraobj::PFParticleMetadata> pandoraMetaData = dune_ana::DUNEAnaPFParticleUtils::GetMetadata(slicePFP, e, "pandora");
       std::map<std::string, float> fPFPPropertiesMap = pandoraMetaData->GetPropertiesMap();
       fnuScore.push_back(fPFPPropertiesMap["NuScore"]);
@@ -443,6 +449,7 @@ void ana::PandoraNeutrinoAnaProtoDUNE::beginJob() {
   fRecoNtuple->Branch("nuID", &fnuID);
   fRecoNtuple->Branch("nuScore", &fnuScore);
   fRecoNtuple->Branch("RecoPDG", &fRecoPDG);
+  fRecoNtuple->Branch("ParentID", &fParentID);
   fRecoNtuple->Branch("RecoVertexX", &fRecoVertexX);
   fRecoNtuple->Branch("RecoVertexY", &fRecoVertexY);
   fRecoNtuple->Branch("RecoVertexZ", &fRecoVertexZ);

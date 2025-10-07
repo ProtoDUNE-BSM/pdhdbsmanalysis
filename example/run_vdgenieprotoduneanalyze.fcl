@@ -12,8 +12,8 @@ source:
 
 services:
 {
-  TFileService: { fileName: "genie_protodune_output.root" }
-  @table::protodunehd_simulation_services
+  TFileService: { fileName: "genie_protodunevd_output.root" }
+  @table::protodunevd_simulation_services
 }
 
 physics:
@@ -23,24 +23,14 @@ physics:
     ana: @local::analyzegenieprotodunedm
   }
 
-  #trigger_paths: [ produce ]
-
   path1: [ ana ]
   end_paths: [ path1 ]
 }
 
-physics.analyzers.ana.decay: 4
 physics.filters.vertexfilter.InputTagTP : "tpmakerTPC"
 physics.filters.vertexfilter.InputTagTA : "tamakerTPC"
 
 physics.analyzers.ana.SimulationLabel: "largeant"
-physics.analyzers.ana.MCTruthLabel: "generator"
+physics.analyzers.ana.MCTruthLabel: "neutrinogenerator"
 physics.analyzers.ana.SetPOT: 1.5e17
 physics.analyzers.ana.filename: "input.root"
-physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-

@@ -12,8 +12,8 @@ source:
 
 services:
 {
-  TFileService: { fileName: "genie_protodune_output.root" }
-  @table::protodunehd_simulation_services
+  TFileService: { fileName: "genie_protodunevd_output.root" }
+  @table::protodunevd_simulation_services
 }
 
 physics:

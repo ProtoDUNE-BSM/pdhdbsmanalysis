@@ -9,6 +9,7 @@
 
 #include "larcore/CoreUtils/ServiceUtil.h"
 #include "larcore/Geometry/Geometry.h"
+#include "larcore/Geometry/WireReadout.h"
 #include "larcorealg/Geometry/GeometryCore.h"
 #include "larcoreobj/SummaryData/POTSummary.h"
 #include "larcoreobj/SimpleTypesAndConstants/geo_types.h"
@@ -108,27 +109,30 @@ private:
   unsigned int fTPCID; ///< TPC ID where neutrino interacts
 
   double fE;
-  double fnuStartX;
-  double fnuStartY;
-  double fnuStartZ;
   double fnuVertexX;
   double fnuVertexY;
   double fnuVertexZ;
+  double fnuPx;
+  double fnuPy;
+  double fnuPz;
 
   bool fInFV;
   
   geo::GeometryCore const* fGeometryService; ///< pointer to Geometry provider
+  //geo::WireReadoutGeom const& wireReadout;
   std::vector<double> fFiducialBoundaries;
   double fZedge;
 
-  double fDecaynum;
   double fPOT;
   double fGoodPOT;
   double fTotalPOT;
 
   bool fTA;
+  bool fTAcollection;
   int fnTAs;
+  int fROP;
   int fAPA_id;
+  std::vector<int> fROPs;
   std::vector<int> fAPA_ids;
   std::vector<double> fTPTAADCIntSum;
 
@@ -140,11 +144,13 @@ ana::GENIETruthNuProtoDUNE::GENIETruthNuProtoDUNE(fhicl::ParameterSet const& p)
   : EDAnalyzer{p}
   , fMCTruthLabel(p.get<std::string>("MCTruthLabel"))
   , fSetPOT(p.get<double>("SetPOT"))
-  , fDecaynum(p.get<int>("decay"))
   // More initializers here.
 {
   
+  fROP = 0;
   fAPA_id = 0;
+  fROPs.clear();
+  fAPA_ids.clear();
   pCollectionAPA1IDs = std::make_pair(2080, 2559);
   pCollectionAPA2IDs = std::make_pair(7200, 7680);  
   pCollectionAPA3IDs = std::make_pair(4160, 4639);
@@ -152,8 +158,12 @@ ana::GENIETruthNuProtoDUNE::GENIETruthNuProtoDUNE(fhicl::ParameterSet const& p)
  
   // Get a pointer to the geometry service provider.
   fGeometryService = lar::providerFrom<geo::Geometry>();
+  std::string info = fGeometryService->Info();
+  //std::cout << info;
   // TPC 1 is the first proper TPC - TPC 0 is for track stubs
   const geo::TPCGeo& tpc = fGeometryService->Cryostat().TPC(1);
+  //geo::WireReadoutGeom const& wireReadout = art::ServiceHandle<geo::WireReadout>()->Get();
+  //wireReadout = art::ServiceHandle<geo::WireReadout>()->Get();
   //fFiducialBoundaries.push_back(0.); // central x
   //fFiducialBoundaries.push_back(tpc.Width() - 0.05*tpc.Width()); // outer x
   //fFiducialBoundaries.push_back(0.05*tpc.Height()); // bottom y
@@ -181,6 +191,12 @@ ana::GENIETruthNuProtoDUNE::GENIETruthNuProtoDUNE(fhicl::ParameterSet const& p)
 
 void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
 {
+  
+  geo::WireReadoutGeom const& wireReadout = art::ServiceHandle<geo::WireReadout>()->Get();
+  
+  fROPs.clear();
+  fAPA_ids.clear();
+  
   // Implementation of required member function here.
   fEventID = e.id().event();
   fRun = e.run();
@@ -188,7 +204,7 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
 
   fInFV = false;
 
-   
+  
   art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
   if (!e.getByLabel("tamakerTPC", taHandle)) {
       fTA = false;
@@ -203,16 +219,14 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
 
   fnTAs = taHandle->size();
 
-  const art::FindManyP<triggerprimitive_t> findTPsInTAs(taHandle, e, "tamakerTPC");
-  if ( ! findTPsInTAs.isValid() ) {
-    std::cout << " [WARNING] TPs not found in TA." << std::endl;
-  }                                                                                                
-  
-  for (size_t ta = 0; ta < taHandle->size(); ta++) {
-    std::cout << "START TA " << ta << " out of " << taHandle->size() << std::endl;
-    auto fTPs = findTPsInTAs.at(ta);
+  fTAcollection = false;
 
-    std::cout << "Found " << fTPs.size() << " TPs in TA " << ta << std::endl;
+  for (size_t ta = 0; ta < taHandle->size(); ta++) {
+    const art::FindManyP<triggerprimitive_t> findTPsInTAs(taHandle, e, "tamakerTPC");
+    if ( ! findTPsInTAs.isValid() ) {
+      std::cout << " [WARNING] TPs not found in TA." << std::endl;
+    }                                                                                                
+    auto fTPs = findTPsInTAs.at(ta);
 
     timestamp_t first_tick = taHandle->at(ta).time_start;
     timestamp_t last_tick = taHandle->at(ta).time_end;
@@ -231,38 +245,18 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
         [] (const art::Ptr<triggerprimitive_t> &lh, const art::Ptr<triggerprimitive_t> &rh) -> bool { return lh->channel < rh->channel; });
 
     channel_t current_chan = fTPs.at(0)->channel;
-    
-    std::cout << "First tick = " << first_tick << ", last tick = " << last_tick << std::endl;
-    std::cout << "First channel = " << current_chan << std::endl;
 
-    std::string title("");
+    auto rop = wireReadout.ChannelToROP(current_chan);
+    auto tpc = rop.parentID().TPCset;
+    fROP = rop.ROP;
+    fAPA_id = tpc;
+   
+    // Often only interested if there is a collection TA
+    if (fROP == 2 || fROP == 3) fTAcollection = true;
+    else if (fAPA_id == 0 && fROP == 1) fTAcollection = true;
+    //if (faPA_id == 0 && fROP == 3)
 
-    if (current_chan >= pCollectionAPA1IDs.first) {
-      if (current_chan <= pCollectionAPA1IDs.second) {
-        // APA 1, TPC 1
-        fAPA_id = 1;
-      }
-    }
-    if (current_chan >= pCollectionAPA3IDs.first) {
-      if (current_chan <= pCollectionAPA3IDs.second) {
-        // APA 3, TPC 2
-        fAPA_id = 3;
-      }
-    }
-    if (current_chan >= pCollectionAPA2IDs.first) {
-      if (current_chan <= pCollectionAPA2IDs.second) {
-        // APA 2, TPC 5
-        fAPA_id = 2;
-      }
-    }
-    if (current_chan >= pCollectionAPA4IDs.first) {
-      if (current_chan <= pCollectionAPA4IDs.second) {
-        // APA 4, TPC 6
-        fAPA_id = 4;
-      }
-    }
-
-    std::cout << "APA ID = " << fAPA_id << std::endl;
+    fROPs.push_back(fROP);
     fAPA_ids.push_back(fAPA_id);
   }
 
@@ -282,15 +276,8 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
 
       fE = neutrino.E();
 
-      std::cout << "E = " << fE << ", POT = " << fPOT << std::endl;
-      if (fE < 5. && fnTAs > 0) {
-        std::cout << ">>> TRIGGERED LOW ENERGY E = " << fE << std::endl;
-      }
-
       double fPrimaryVertex[4];
 
-      //const size_t numberTrajectoryPoints = neutrino.NumberTrajectoryPoints();
-      //const int last = numberTrajectoryPoints - 1;
       const TLorentzVector& positionStart = neutrino.Position(0);
       // Set the vertex position - it should be the same value for each event	
       positionStart.GetXYZT(fPrimaryVertex);
@@ -298,6 +285,10 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
       fnuVertexX = fPrimaryVertex[0];
       fnuVertexY = fPrimaryVertex[1];
       fnuVertexZ = fPrimaryVertex[2];
+
+      fnuPx = neutrino.Px();
+      fnuPy = neutrino.Py();
+      fnuPz = neutrino.Pz();
 
       if (std::fabs(fnuVertexX) < fFiducialBoundaries.at(1)) {
         if (fnuVertexY > fFiducialBoundaries.at(2) && 
@@ -311,7 +302,7 @@ void ana::GENIETruthNuProtoDUNE::analyze(art::Event const& e)
 
       geo::Point_t nuV_point(fnuVertexX, fnuVertexY, fnuVertexZ);
       fTPCID = fGeometryService->FindTPCAtPosition(nuV_point).TPC;
-      if (fTPCID > 7 || fTPCID < 0) fTPCID = -999;
+      if (fTPCID > 7 || fTPCID < 0) fTPCID = -1;
       
       // Store total event outputs in the TTree
       fSimulationNtuple->Fill();
@@ -362,17 +353,18 @@ void ana::GENIETruthNuProtoDUNE::beginJob() {
   fSimulationNtuple->Branch("TPCID", &fTPCID);
 
   fSimulationNtuple->Branch("E", &fE, "E/D");
-  fSimulationNtuple->Branch("Decaynum", &fDecaynum, "Decaynum/D");
   fSimulationNtuple->Branch("POT", &fPOT, "POT/D");
-  fSimulationNtuple->Branch("nuStartX", &fnuStartX, "nuStartX/D");
-  fSimulationNtuple->Branch("nuStartY", &fnuStartY, "nuStartY/D");
-  fSimulationNtuple->Branch("nuStartZ", &fnuStartZ, "nuStartZ/D");
   fSimulationNtuple->Branch("nuVertexX", &fnuVertexX, "nuVertexX/D");
   fSimulationNtuple->Branch("nuVertexY", &fnuVertexY, "nuVertexY/D");
   fSimulationNtuple->Branch("nuVertexZ", &fnuVertexZ, "nuVertexZ/D");
+  fSimulationNtuple->Branch("nuPx", &fnuPx, "nuPx/D");
+  fSimulationNtuple->Branch("nuPy", &fnuPy, "nuPy/D");
+  fSimulationNtuple->Branch("nuPz", &fnuPz, "nuPz/D");
   fSimulationNtuple->Branch("InFV", &fInFV, "InFV/B");
   fSimulationNtuple->Branch("TA", &fTA, "TA/B");
+  fSimulationNtuple->Branch("TAcollection", &fTAcollection, "TAcollection/B");
   fSimulationNtuple->Branch("nTAs", &fnTAs, "nTAs/I");
+  fSimulationNtuple->Branch("ROPs", &fROPs);
   fSimulationNtuple->Branch("APA_ids", &fAPA_ids);
   fSimulationNtuple->Branch("fTPTAADCIntSum", &fTPTAADCIntSum);
 
@@ -383,7 +375,7 @@ void ana::GENIETruthNuProtoDUNE::beginJob() {
 
 void ana::GENIETruthNuProtoDUNE::beginSubRun(art::SubRun const& subRun) {
   
-  const auto potSummaryHandle = subRun.getValidHandle<sumdata::POTSummary>("generator");
+  const auto potSummaryHandle = subRun.getValidHandle<sumdata::POTSummary>(fMCTruthLabel);
   const auto &potSummary = *potSummaryHandle;
   fPOT = potSummary.totpot;
   fGoodPOT = potSummary.totgoodpot;

@@ -336,6 +336,7 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
   // Get truth information about neutrino if there is one
   art::Handle<std::vector<simb::MCTruth>> truthHandle;
   bool neutrinoMC(false); 
+  //bool inFV = false;
   if (e.getByLabel(fMCTruthLabel, truthHandle)) {
     neutrinoMC = true;
     for (auto const& truth : (*truthHandle)) {
@@ -355,6 +356,14 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
         fnuVertexZ = fPrimaryVertex[2];
       }
     }
+
+    //bool inFV = false;
+    /*if (fnuVertexX < 350 && fnuVertexX > -350 
+        && fnuVertexY > 0 && fnuVertexY < 607 
+        && fnuVertexZ > 0 && fnuVertexZ < 460) {
+      inFV = true;
+    }*/
+
     auto nuV_point = geo::Point_t(fnuVertexX, fnuVertexY, fnuVertexZ);
     
     geo::Point_t sceOffset{0, 0, 0};
@@ -364,6 +373,7 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
 
     geo::GeometryCore const* fGeometryService = lar::providerFrom<geo::Geometry>();
     fTPCID = static_cast<int>(fGeometryService->FindTPCAtPosition(nuV_point).TPC);
+    std::cout << "TPCID = " << fTPCID << std::endl;
     if (fTPCID > 7 || fTPCID < 0) fTPCID = -1;
  
     switch (fTPCID) {
@@ -384,7 +394,7 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
         break;
     }
 
-    if (fAPA == 1 || fAPA == 2 || fAPA == 3 || fAPA == 4) {
+    //if (fAPA == 1 || fAPA == 2 || fAPA == 3 || fAPA == 4) {
       auto plane = wireReadout.Plane(fGeometryService->FindTPCAtPosition(corr_nuV_point), geo::View_t::kW);
 
       double time = detProp.ConvertXToTicks(corr_nuV_point.X(), plane.ID());
@@ -394,13 +404,13 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
       fDriftDistance = plane.DistanceFromPlane(nuV_point);
       fVertexTime = fDriftDistance / 0.16; //>> drift speed  = 0.16cm/us
       fVertexTick = static_cast<timestamp_t>((fVertexTime * 1000.) / 16.); //>> 16ns per tick
-    } else { // only calculate drift distance for real TPCs
+    /*} else { // only calculate drift distance for real TPCs
       fDriftDistance = 0.;
       fVertexTime = 0.;
       fVertexTick = 0;
       fVertexTick_new_evd = 0;
       fVertexTick_new_weight = 0;
-    }
+    }*/
   }
 
   // Define neutrino time window if it exists
@@ -409,7 +419,8 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
   bool doNuWindow = false;
 
   std::cout << "VertexTick = " << fVertexTick << ", APA = " << fAPA << std::endl;
-  if (fAPA > 0 && fVertexTick > 0 && neutrinoMC) {
+  //if (fAPA > 0 && fVertexTick > 0 && neutrinoMC && inFV) {
+  if (fVertexTick > 0 && neutrinoMC) {
     //timestamp_t vertex_tick_copy = fVertexTick;
     timestamp_t vertex_tick_copy = fVertexTick_new_weight;
     //int int_nuWindowStart = static_cast<int>(vertex_tick_copy) - 10000;
@@ -448,15 +459,15 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
   auto fTAfromTPTA = *tafromtpta_handle;
 
   // Take TCs from event
-  auto tc_handle = e.getValidHandle< std::vector<dunedaq::trgdataformats::TriggerCandidateData> >(tc_tag_);
-  fTriggerCandidate = *tc_handle;
+  //auto tc_handle = e.getValidHandle< std::vector<dunedaq::trgdataformats::TriggerCandidateData> >(tc_tag_);
+  //fTriggerCandidate = *tc_handle;
   
   if(verbosity_ >= Verbosity::kInfo)
   {
     //std::cout << "Found " << rawdigit_vec.size() << " raw::RawDigits" << std::endl;
     std::cout << "Found " << fTriggerPrimitive.size() << " TPs" << std::endl;
     std::cout << "Found " << fTriggerActivity.size() << " TAs" << std::endl;
-    std::cout << "Found " << fTriggerCandidate.size() << " TCs" << std::endl;
+    //std::cout << "Found " << fTriggerCandidate.size() << " TCs" << std::endl;
   }
  
   fTA = (int)fTriggerActivity.size();
@@ -481,10 +492,17 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
     fAlgorithm_TA = static_cast<int>(fTriggerActivity[i].algorithm);
     
     auto rop = wireReadout.ChannelToROP(fChannelID);
-    fROP_ID = rop.ROP;
+    auto tpc = rop.parentID().TPCset;
+    //auto first_channel_rop = wireReadout.FirstChannelInROP(rop);
+    //auto n_channels_rop = wireReadout.Nchannels(rop);
+    //fROP_ID = rop.ROP;
     //auto tpcid = wireReadout.ROPtoTPCs(rop);
     //int apaTA = rop.TPCset;
-    //std::cout << "TA in APA " << apaTA << "\n";
+    int apaTA = tpc;
+    //std::cout << ">>> TA in APA " << apaTA << "\n";
+    //int rop_index = rop.deepestIndex();
+    //std::cout << "rop: " << rop_index << ", 1st ch: " << first_channel_rop << ", n chan: " << n_channels_rop << "\n";
+
     /*
     int apaTA = 0;
     for (const auto &t : tpcid) {
@@ -500,23 +518,24 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
       }
     }
     */
-
+/*
     int apaTA = 0;
     //if (fTriggerActivity[i].channel_start >= 2080 && fTriggerActivity[i].channel_end <= 2559) {
-    if (fTriggerActivity[i].channel_end <= 2559) {
+    if (fTriggerActivity[i].channel_end <= 2560) {
       apaTA = 1;
     } else if (fTriggerActivity[i].channel_start >= 7200 && fTriggerActivity[i].channel_end <= 7680) {
       apaTA = 2;
-    } else if (fTriggerActivity[i].channel_start >= 4160 && fTriggerActivity[i].channel_end <= 4639) {
+    } else if (fTriggerActivity[i].channel_start >= 4160 && fTriggerActivity[i].channel_end <= 4640) {
       apaTA = 3;
-    } else if (fTriggerActivity[i].channel_start >= 9280 && fTriggerActivity[i].channel_end <= 9759) {
+    } else if (fTriggerActivity[i].channel_start >= 9280 && fTriggerActivity[i].channel_end <= 9760) {
       apaTA = 4;
     } else {
       // do nothing
     }
     //std::cout << "TA in APA " << apaTA << "; test APA = " << test_apaTA << "\n";
-    
+   */ 
     fapaTA.push_back(apaTA);
+    
     // Fill tree
     fTATree -> Fill();
   }
@@ -556,18 +575,26 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
     // Fill tree
     //fTPTree -> Fill();
     int apa = 0;
+    auto rop = wireReadout.ChannelToROP(fChannelID);
+    auto tpc = rop.parentID().TPCset;
+    //auto first_channel_rop = wireReadout.FirstChannelInROP(rop);
+    //auto n_channels_rop = wireReadout.Nchannels(rop);
+    apa = tpc;
+    //std::cout << "TP in APA " << apa << "\n";
+    //int rop_index = rop.deepestIndex();
+    //std::cout << "rop: " << rop_index << ", 1st ch: " << first_channel_rop << ", n chan: " << n_channels_rop << "\n";
     //if (fChannelID >= 2080 && fChannelID <= 2559) {
-    if (fChannelID <= 2559) {
+    /*if (fChannelID <= 2560) {
       apa = 1;
     } else if (fChannelID >= 7200 && fChannelID <= 7680) {
       apa = 2;
-    } else if (fChannelID >= 4160 && fChannelID <= 4639) {
+    } else if (fChannelID >= 4160 && fChannelID <= 4640) {
       apa = 3;
-    } else if (fChannelID >= 9280 && fChannelID <= 9759) {
+    } else if (fChannelID >= 9280 && fChannelID <= 9760) {
       apa = 4;
     } else {
       // do nothing
-    }
+    }*/
     
 
     // Determine the time window index (0 to 9).
@@ -610,7 +637,7 @@ void duneana::SmallTriggerTPCInfoDisplay::analyze(art::Event const& e)
 
     // Fill neutrino window if defined
     if (doNuWindow && fTime_peak >= nuWindowStart && fTime_peak <= nuWindowEnd && apa == fAPA) {
-      //std::cout << "Neutrino in APA " << apa << "\n";
+      std::cout << "Neutrino in APA " << apa << "\n";
       fNuWindow_timepeak[0].push_back(fTime_peak);
       fNuWindow_channelid[0].push_back(fChannelID);
       fNuWindow_adcintegral[0].push_back(fADC_integral);
