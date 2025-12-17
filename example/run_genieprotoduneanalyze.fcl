@@ -37,10 +37,4 @@ physics.analyzers.ana.SimulationLabel: "largeant"
 physics.analyzers.ana.MCTruthLabel: "generator"
 physics.analyzers.ana.SetPOT: 1.5e17
 physics.analyzers.ana.filename: "input.root"
-physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
 
