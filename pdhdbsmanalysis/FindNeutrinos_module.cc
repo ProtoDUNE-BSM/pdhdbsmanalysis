@@ -89,6 +89,7 @@ public:
     explicit FindNeutrinos(fhicl::ParameterSet const& cfg);
     void analyze(art::Event const& event) override;
     void beginSubRun(art::SubRun const& subRun) override;
+    void endRun(art::Run const& run) override;
     void beginJob() override;
     void endJob() override {}
 
@@ -173,6 +174,7 @@ private:
     TTree* fTruthTree     {nullptr};
     TTree* fAggregateTree {nullptr};
     TTree* fImageTree     {nullptr};
+    TTree* fFileInfo      {nullptr};
 
     // --------------------------------------------------------------------------
     //  Reco-tree branches
@@ -284,6 +286,7 @@ private:
     double fCurrentSubrunTotalPOT   {0.};
     double fCurrentSubrunGoodPOT    {0.};
     double fTotalAccumulatedPOT     {0.};
+    double fFileTotalPOT            {0.};
     int    fTriggerActivityPresent  {0};
     int    fGlobalEventCounter      {0};
 };
@@ -414,7 +417,10 @@ void NeutrinoAna::FindNeutrinos::beginJob()
     fImageTree->Branch("imageU4", &fImageU4);
     fImageTree->Branch("imageV4", &fImageV4);
     fImageTree->Branch("imageZ4", &fImageZ4);
-    
+
+    fFileInfo = tfs->make<TTree>("file_info", "File-level information");
+    fFileInfo->Branch("totalAccumulatedPOT", &fFileTotalPOT);
+
 }
 
 // ============================================================================
@@ -426,10 +432,24 @@ void NeutrinoAna::FindNeutrinos::beginSubRun(art::SubRun const& subRun)
 
     auto const& potSummaryHandle =
         subRun.getValidHandle<sumdata::POTSummary>("generator");
-
     fCurrentSubrunTotalPOT   = potSummaryHandle->totpot;
     fCurrentSubrunGoodPOT    = potSummaryHandle->totgoodpot;
     fTotalAccumulatedPOT    += fCurrentSubrunTotalPOT;
+}
+void NeutrinoAna::FindNeutrinos::endRun(art::Run const& run)
+{
+    // fill the file info tree at the start of the job
+    fFileTotalPOT = 0.0;
+    if (fEnableTruth) {
+        
+        // auto const& potSummaryHandle = subRun.getValidHandle<sumdata::POTSummary>("generator");
+        // fFileTotalPOT = potSummaryHandle->totpot;
+        fFileTotalPOT = fCurrentSubrunTotalPOT;
+    }
+
+    fFileInfo->Fill();
+    
+
 }
 
 // ============================================================================
