@@ -235,6 +235,7 @@ private:
     int          fAggregateSpillStatusFlag        {0};
     double       fAggregateEventTimestamp         {0.};
     int          fAggregateTotalNumberOfHits      {0};
+    int          fAggregateNumberOfHitsInSlice    {0};
     int          fAggregateTriggerCandidateCount  {0};
     int          fAggregateGroundShakeCount       {0};
     int          fAggregateSumOfLastADCTicks      {0};
@@ -403,6 +404,7 @@ void NeutrinoAna::FindNeutrinos::beginJob()
     fAggregateTree->Branch("timeFitMean", &fAggregateTimeFitMean);
     fAggregateTree->Branch("timeFitSigma", &fAggregateTimeFitSigma);
     fAggregateTree->Branch("lengthOfMuonTrack", &fAggregateLengthOfMuonTrack);
+    fAggregateTree->Branch("numberOfHitsInSlice",&fAggregateNumberOfHitsInSlice);
 
     fImageTree = tfs->make<TTree>("tree_image", "One entry per image");
     fImageTree->Branch("imageU1", &fImageU1);
@@ -1304,52 +1306,52 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
     // Reset aggregate counters
     fAggregateEventID                = event.id().event();
     fAggregateEventSequenceNumber    = fGlobalEventCounter;
-    fAggregateVertexX                = -1.;
-    fAggregateVertexY                = -1.;
-    fAggregateVertexZ                = -1.;
-    fAggregateReconstructedEnergy    = -1.;
-    fAggregateDirectionX             = -1.;
-    fAggregateDirectionY             = -1.;
-    fAggregateDirectionZ             = -1.;
-    fAggregateDirectionX2            = -1.;
-    fAggregateDirectionY2            = -1.;
-    fAggregateDirectionZ2            = -1.;
-    fAggregateNumberOfHits           = -1;
-    fAggregateNumberOfPFParticles    = -1;
-    fAggregateTrueOriginID           = -1;
-    fAggregatePassSelectionCriterion = -1;
-    fAggregateSpillStatusFlag        = -1;
-    fAggregateTriggerCandidateCount  = -1;
-    fAggregateGroundShakeCount       = -1;
-    fAggregateSumOfLastADCTicks      = -1;
-    fAggregateSumOfTriggeredADCTicks = -1;
-    fAggregatePassSecondSelectionCriterion = -1;
-    fAggregateEnergyDepositedInFirst10cm = -1;
-    fAggregateEnergyDepositedInSecond10cm = -1;
-    fAggregateEnergyDepositedInThird10cm = -1;
-    fAggregateEnergyDepositedInFourth10cm = -1;
-    fAggregateEnergyDepositedInFifth10cm = -1;
-    fAggregateEnergyDepositedInSixth10cm = -1;
-    fAggregateEnergyDepositedInSeventh10cm = -1;
-    fAggregateEnergyDepositedInEighth10cm = -1;
-    fAggregateEnergyDepositedInNinth10cm = -1;
-    fAggregateEnergyDepositedInTenth10cm = -1;
-    fAggregateEnergyDepositedInEleventh10cm = -1;
-    fAggregateEnergyDepositedInTwelfth10cm = -1;
-    fAggregateEnergyDepositedInThirteenth10cm = -1;
-    fAggregateEnergyDepositedInFourteenth10cm = -1;
-    fAggregateEnergyDepositedInFifteenth10cm = -1;
-    fAggregateEnergyDepositedInFirst10cmBefore = -1;
-    fAggregateEnergyDepositedInSecond10cmBefore = -1;
-    fAggregateZROIStart = -1;
-    fAggregateZROIEnd = -1;
-    fAggregateTimeROIStart = -1;
-    fAggregateTimeROIEnd = -1;
-    fAggregateTimeFitMean = -1;
-    fAggregateTimeFitSigma = -1;
-    fAggregateLengthOfMuonTrack = -1;
-    
-    // ------------------------------------------------------------------------
+    fAggregateVertexX                = -99999.;
+    fAggregateVertexY                = -99999.;
+    fAggregateVertexZ                = -99999.;
+    fAggregateReconstructedEnergy    = -99999.;
+    fAggregateDirectionX             = -99999.;
+    fAggregateDirectionY             = -99999.;
+    fAggregateDirectionZ             = -99999.;
+    fAggregateDirectionX2            = -99999.;
+    fAggregateDirectionY2            = -99999.;
+    fAggregateDirectionZ2            = -99999.;
+    fAggregateNumberOfHits           = -99999;
+    fAggregateNumberOfPFParticles    = -99999;
+    fAggregateTrueOriginID           = -99999;
+    fAggregatePassSelectionCriterion = -99999;
+    fAggregateSpillStatusFlag        = -99999;
+    fAggregateTriggerCandidateCount  = -99999;
+    fAggregateGroundShakeCount       = -99999;
+    fAggregateSumOfLastADCTicks      = -99999;
+    fAggregateSumOfTriggeredADCTicks = -99999;
+    fAggregatePassSecondSelectionCriterion = -99999;
+    fAggregateEnergyDepositedInFirst10cm = -99999;
+    fAggregateEnergyDepositedInSecond10cm = -99999;
+    fAggregateEnergyDepositedInThird10cm = -99999;
+    fAggregateEnergyDepositedInFourth10cm = -99999;
+    fAggregateEnergyDepositedInFifth10cm = -99999;
+    fAggregateEnergyDepositedInSixth10cm = -99999;
+    fAggregateEnergyDepositedInSeventh10cm = -99999;
+    fAggregateEnergyDepositedInEighth10cm = -99999;
+    fAggregateEnergyDepositedInNinth10cm = -99999;
+    fAggregateEnergyDepositedInTenth10cm = -99999;
+    fAggregateEnergyDepositedInEleventh10cm = -99999;
+    fAggregateEnergyDepositedInTwelfth10cm = -99999;
+    fAggregateEnergyDepositedInThirteenth10cm = -99999;
+    fAggregateEnergyDepositedInFourteenth10cm = -99999;
+    fAggregateEnergyDepositedInFifteenth10cm = -99999;
+    fAggregateEnergyDepositedInFirst10cmBefore = -99999;
+    fAggregateEnergyDepositedInSecond10cmBefore = -99999;
+    fAggregateZROIStart = -99999;
+    fAggregateZROIEnd = -99999;
+    fAggregateTimeROIStart = -99999;
+    fAggregateTimeROIEnd = -99999;
+    fAggregateTimeFitMean = -99999;
+    fAggregateTimeFitSigma = -99999;
+    fAggregateLengthOfMuonTrack = -99999;
+    fAggregateNumberOfHitsInSlice = -99999;
+        // ------------------------------------------------------------------------
     //  Loop PFParticles
     // ------------------------------------------------------------------------
     art::FindManyP<recob::Vertex> pfpToVertex(
@@ -1410,6 +1412,19 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
         }
         fRecoTree->Fill();
     }
+
+     // Get the hits in the best slice
+    std::vector<art::Ptr<recob::Hit>> bestSliceHits;
+    auto sliceToHits = art::FindManyP<recob::Hit>(
+        sliceHandle, event, fSliceLabel);
+    if (sliceToHits.isValid()) {
+        bestSliceHits = sliceToHits.at(bestSlice.key());
+        fAggregateNumberOfHitsInSlice = static_cast<int>(bestSliceHits.size());
+    } else {
+        mf::LogWarning("FindNeutrinos")
+            << "No hits found for best slice in event " << event.id().event();
+    }
+
 
     // ------------------------------------------------------------------------
     //  Refine aggregate energy and direction with dedicated algs
