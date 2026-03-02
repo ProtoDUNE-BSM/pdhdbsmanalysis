@@ -1,5 +1,6 @@
 #include "GENIETruthNuProtoDUNE.fcl"
 #include "services_dune.fcl"
+#include "services_refactored_pdune.fcl"
 
 process_name: GENIETruthNuProtoDUNE
 
@@ -13,7 +14,7 @@ source:
 services:
 {
   TFileService: { fileName: "genie_protodunevd_output.root" }
-  @table::protodunevd_simulation_services
+  @table::protodunevd_refactored_simulation_services
 }
 
 physics:
@@ -38,9 +39,3 @@ physics.analyzers.ana.MCTruthLabel: "generator"
 physics.analyzers.ana.SetPOT: 1.5e17
 physics.analyzers.ana.filename: "input.root"
 physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-#physics.analyzers.ana.BR: @local::numu.decay4
-
