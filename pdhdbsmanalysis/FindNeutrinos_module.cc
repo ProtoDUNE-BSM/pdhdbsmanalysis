@@ -61,6 +61,20 @@
 #include "larsim/MCCheater/BackTrackerService.h"
 #include "larsim/MCCheater/ParticleInventoryService.h"
 #include "larcoreobj/SimpleTypesAndConstants/geo_types.h"
+#include "larevt/SpaceChargeServices/SpaceChargeService.h"
+#include "lardata/DetectorInfoServices/DetectorPropertiesService.h"
+#include "lardataalg/DetectorInfo/DetectorProperties.h"
+#include "detdataformats/DetID.hpp"
+#include "lardataobj/RawData/RawDigit.h"
+#include "lardataobj/RawData/RDTimeStamp.h"
+#include "nusimdata/SimulationBase/MCTruth.h"
+#include "lardata/DetectorInfoServices/DetectorPropertiesService.h"
+#include "lardataalg/DetectorInfo/DetectorProperties.h"
+
+#include "larcore/CoreUtils/ServiceUtil.h"
+#include "larcore/Geometry/Geometry.h"
+#include "larcorealg/Geometry/GeometryCore.h"
+#include "larcore/Geometry/WireReadout.h"
 
 // ROOT includes
 #include "TTree.h"
@@ -265,6 +279,10 @@ private:
     double       fAggregateTimeFitMean {0.};
     double       fAggregateTimeFitSigma {0.};
     double       fAggregateLengthOfMuonTrack {0.};
+    double       fAggregateTATimeStart {0.};
+    double       fAggregateTATimeEnd {0.};
+    double       fAggregateVertexTime {0.};
+
     // --------------------------------------------------------------------------
     //  Image-tree branches
     // --------------------------------------------------------------------------
@@ -405,6 +423,10 @@ void NeutrinoAna::FindNeutrinos::beginJob()
     fAggregateTree->Branch("timeFitSigma", &fAggregateTimeFitSigma);
     fAggregateTree->Branch("lengthOfMuonTrack", &fAggregateLengthOfMuonTrack);
     fAggregateTree->Branch("numberOfHitsInSlice",&fAggregateNumberOfHitsInSlice);
+    fAggregateTree->Branch("TATimeStart", &fAggregateTATimeStart);
+    fAggregateTree->Branch("TATimeEnd", &fAggregateTATimeEnd);
+    fAggregateTree->Branch("vertexTime", &fAggregateVertexTime);
+    
 
     fImageTree = tfs->make<TTree>("tree_image", "One entry per image");
     fImageTree->Branch("imageU1", &fImageU1);
@@ -1239,13 +1261,25 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
     //  TriggerActivity flag
     // ------------------------------------------------------------------------
     art::Handle<std::vector<dunedaq::trgdataformats::TriggerActivityData>> taHandle;
+    fAggregateTATimeStart = -99999;
+    fAggregateTATimeEnd = -99999;
     event.getByLabel(fTriggerActivityLabel, taHandle);
     fTriggerActivityPresent =
         (taHandle.isValid() && !taHandle->empty()) ? 1 : 0;
     std::cout << "TriggerActivity present: "
               << (fTriggerActivityPresent ? "Yes" : "No") << std::endl;
-
-    // ------------------------------------------------------------------------
+    if (fTriggerActivityPresent) {
+        for (size_t ta = 0; ta < taHandle->size(); ta++) {
+            auto first_tick = taHandle->at(ta).time_start;
+            auto last_tick = taHandle->at(ta).time_end;
+            std::cout << "TriggerActivity " << ta << ": Start tick = " << first_tick << ", End tick = " << last_tick << std::endl;
+        }                
+        fAggregateTATimeStart = taHandle->at(0).time_start;
+        fAggregateTATimeEnd = taHandle->at(taHandle->size()-1).time_end;
+        std::cout << "Aggregate TriggerActivity: Start tick = " << fAggregateTATimeStart << ", End tick = " << fAggregateTATimeEnd << std::endl;
+}
+    // --------------------------------------------
+    // ----------------------------
     //  Truth branch fill (if enabled)
     // ------------------------------------------------------------------------
     if (fEnableTruth) {
@@ -1351,7 +1385,7 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
     fAggregateTimeFitSigma = -99999;
     fAggregateLengthOfMuonTrack = -99999;
     fAggregateNumberOfHitsInSlice = -99999;
-        // ------------------------------------------------------------------------
+    // ------------------------------------------------------------------------
     //  Loop PFParticles
     // ------------------------------------------------------------------------
     art::FindManyP<recob::Vertex> pfpToVertex(
@@ -1760,6 +1794,60 @@ void NeutrinoAna::FindNeutrinos::analyze(art::Event const& event)
 
     // Total number of hits in event
     fAggregateTotalNumberOfHits = static_cast<int>(allHitPtrs.size());
+    // ------------------------------------------------------------------------
+    //  Compute neutrino vertex time and drift distance if truth information is available
+    // ------------------------------------------------------------------------
+
+    art::ServiceHandle<geo::Geometry> geom;
+    geo::WireReadoutGeom const& wireReadout = art::ServiceHandle<geo::WireReadout>()->Get();
+
+    const spacecharge::SpaceCharge* sce = lar::providerFrom<spacecharge::SpaceChargeService>();
+    auto const detProp = art::ServiceHandle<detinfo::DetectorPropertiesService const>()->DataFor(event);
+
+
+    // Compute vertex time and drift distance for reconstructed neutrino vertex
+    double fVertexTime = 0.0;
+    double fDriftDistance = 0.0;
+    int fVertexTick = 0;
+    // 
+    if (fAggregateVertexX == -99999. || fAggregateVertexY == -99999. || fAggregateVertexZ == -99999.) {
+        std::cout << "Invalid neutrino vertex position, skipping time and drift distance calculation." << std::endl;
+    } else {
+        std::cout << "Here 4" << std::endl;
+        
+        auto nuV_point = geo::Point_t(fAggregateVertexX, fAggregateVertexY, fAggregateVertexZ);
+        std::cout << "Here 3" << std::endl;
+        
+        geo::Point_t sceOffset{0, 0, 0};
+        if (sce->EnableCorrSCE()) sceOffset = sce->GetPosOffsets(nuV_point);
+
+        geo::Point_t const corr_nuV_point{fAggregateVertexX - sceOffset.X(), fAggregateVertexY + sceOffset.Y(), fAggregateVertexZ + sceOffset.Z()};
+
+        // auto plane = fGeometryService->FindTPCAtPosition(corr_nuV_point);
+        // Get geometry service
+        geo::GeometryCore const* fGeometryService = lar::providerFrom<geo::Geometry>();
+        std::cout << "Here 2" << std::endl;
+        std::cout << "Corrected neutrino vertex position: (" << corr_nuV_point.X() << ", " << corr_nuV_point.Y() << ", " << corr_nuV_point.Z() << ")" << std::endl;
+        auto tpc = fGeometryService->FindTPCAtPosition(corr_nuV_point);
+        std::cout << "Here 2.5" << std::endl;
+        // print TPC information
+        // std::cout << "TPC: " << tpc << ", Is valid: " << tpc.isValid<< std::endl;
+        if (tpc.isValid) { 
+            auto plane = wireReadout.Plane(tpc, geo::View_t::kW);
+            std::cout << "Here 1" << std::endl;
+            if (wireReadout.HasPlane(plane.ID())) {
+                std::cout << "TPC ID: " << plane.ID().TPC << ", Plane ID: " << plane.ID().Plane << std::endl;
+                double time = detProp.ConvertXToTicks(corr_nuV_point.X(), plane.ID());
+                fVertexTick = static_cast<int>(time);
+
+                fDriftDistance = std::abs(corr_nuV_point.X());
+                fVertexTime = fDriftDistance / 0.16; // drift speed = 0.16 cm/us
+            }
+        }
+    }
+    std::cout << "Neutrino vertex time: " << fVertexTime << " us, Drift distance: " << fDriftDistance << " cm, Vertex tick: " << fVertexTick << std::endl;
+    fAggregateVertexTime = fVertexTime;
+
 
     // ------------------------------------------------------------------------
     //  Fill aggregate tree

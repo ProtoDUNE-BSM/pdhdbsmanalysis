@@ -51,7 +51,7 @@ FindNeutrinos:
     HitsModuleLabel:  "gaushit"
     MCTruthLabel:     "generator"
     CalorimetryLabel: "pandoracalo"
-    TALabel:          "tamakerTPC"
+    TALabel:          "triggerrawdecoder:daq"
     OutputFolder:     "/exp/dune/app/users/dpullia/out_folder/base/"
     OutputFileName:   "FindNeutrinos_"
     GetTruth:         false

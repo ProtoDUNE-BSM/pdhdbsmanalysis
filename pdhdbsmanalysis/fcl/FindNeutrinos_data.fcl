@@ -1,4 +1,4 @@
-#include "FindNeutrinosConfig_sig.fcl"
+#include "FindNeutrinosConfig_data.fcl"
 #include "simulationservices_dune.fcl"
 #include "services_refactored_pdune.fcl"
 #include "protodune_tools_dune.fcl"
